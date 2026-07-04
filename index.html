@@ -221,6 +221,67 @@
   .importchoice button { flex: 1; min-height: 44px; border-radius: 8px; font-size: 14px; font-weight: 600; border: 1px solid var(--line); background: var(--ink2); }
   .importchoice .rep { color: var(--red); }
 
+  /* ---------- body weight ---------- */
+  .bwcard {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--ink1); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 14px;
+  }
+  .bwlbl { font-size: 12px; letter-spacing: .1em; text-transform: uppercase; color: var(--faint); }
+  .bwhint { font-size: 13px; color: var(--dim); margin-top: 2px; }
+  .bwhint.ok { color: var(--green); }
+  .bwinput {
+    display: flex; align-items: baseline; gap: 6px;
+    background: var(--ink2); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px;
+  }
+  .bwinput input {
+    width: 76px; background: none; border: none; text-align: right;
+    font-family: var(--disp); font-weight: 700; font-size: 24px;
+    font-variant-numeric: tabular-nums; padding: 0;
+  }
+  .bwinput span { color: var(--faint); font-size: 12px; text-transform: uppercase; }
+
+  /* ---------- add form v2 ---------- */
+  .flabel { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin: 12px 0 6px; }
+  .flabel:first-child { margin-top: 0; }
+  .chip.on { background: var(--blue); border-color: var(--blue); color: #0D1420; font-weight: 600; }
+  select.exsel {
+    width: 100%; background: var(--ink2); color: var(--chalk);
+    border: 1px solid var(--line); border-radius: 8px; padding: 12px; font-size: 16px;
+    -webkit-appearance: none; appearance: none;
+  }
+  .modelink { display: block; color: var(--blue); font-size: 13px; padding: 10px 2px 0; min-height: 36px; }
+  .equiptag {
+    font-size: 10px; font-weight: 700; letter-spacing: .08em; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 5px; padding: 2px 6px;
+    text-transform: uppercase; vertical-align: 3px; margin-left: 8px;
+    font-family: var(--ui);
+  }
+
+  /* ---------- calendar ---------- */
+  .calhead { display: flex; align-items: center; justify-content: space-between; padding: 4px 2px 12px; }
+  .calhead .mon { font-family: var(--disp); font-weight: 700; font-size: 22px; text-transform: uppercase; letter-spacing: .03em; }
+  .calhead button { color: var(--dim); font-size: 24px; padding: 4px 18px; min-height: 44px; }
+  .calgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .caldow { text-align: center; font-size: 10px; letter-spacing: .1em; color: var(--faint); padding-bottom: 6px; }
+  .calday {
+    position: relative; aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    border-radius: 50%; font-size: 15px; font-variant-numeric: tabular-nums;
+    color: var(--dim); border: 1px solid transparent;
+  }
+  .calday.haswk { background: var(--blue); color: #0D1420; font-weight: 700; }
+  .calday.today { border-color: var(--chalk); }
+  .calday.sel { outline: 2px solid var(--blue); outline-offset: 2px; }
+  .calday .bwdot {
+    position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%);
+    width: 4px; height: 4px; border-radius: 50%; background: var(--yellow);
+  }
+  .calday.haswk .bwdot { background: #0D1420; }
+  .caldetail { margin-top: 16px; }
+  .callegend { color: var(--faint); font-size: 13px; padding: 12px 4px 0; }
+  .callegend .wk { color: var(--blue); }
+  .callegend .bw { color: var(--yellow); }
+
   /* ---------- tabs ---------- */
   nav.tabs {
     position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
@@ -258,6 +319,10 @@
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><path d="M4 9v6M8 6v12M16 6v12M20 9v6M8 12h8"/></svg>
       LOG
     </button>
+    <button data-tab="calendar" aria-label="Calendar">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="14" rx="2"/><path d="M4 11h16M8 3v5M16 3v5"/></svg>
+      CALENDAR
+    </button>
     <button data-tab="history" aria-label="History">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
       HISTORY
@@ -279,12 +344,19 @@ let db = load();
 let tab = 'log';
 let ui = {
   addingEx: false,        // add-exercise form open
+  addMode: 'browse',      // 'browse' catalog | 'custom' free text
+  addGroup: null,         // selected body group
+  addExName: null,        // selected catalog exercise
+  addEquip: null,         // selected equipment
+  customName: '',         // free-text name (survives re-renders)
   pending: {},            // exId -> {w, r} stepper values
   notesOpen: {},          // exId -> bool
   armed: null,            // id of button awaiting delete confirmation
   armTimer: null,
   importPending: null,    // parsed backup awaiting merge/replace choice
   exportedFlash: false,
+  calY: null, calM: null, // calendar month in view
+  calSel: null,           // selected calendar date
 };
 
 function load() {
@@ -292,10 +364,13 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const d = JSON.parse(raw);
-      if (d && Array.isArray(d.workouts)) return d;
+      if (d && Array.isArray(d.workouts)) {
+        if (!d.bodyweight) d.bodyweight = {};
+        return d;
+      }
     }
   } catch (e) {}
-  return { workouts: [], settings: { unit: 'kg', lastExport: null, nudgeSnooze: null } };
+  return { workouts: [], bodyweight: {}, settings: { unit: 'kg', lastExport: null, nudgeSnooze: null } };
 }
 function save() { localStorage.setItem(KEY, JSON.stringify(db)); }
 
@@ -306,6 +381,85 @@ const todayStr = () => {
 };
 const unit = () => db.settings.unit || 'kg';
 const wStep = () => unit() === 'kg' ? 2.5 : 5;
+
+/* ================= exercise catalog ================= */
+const CATALOG = {
+  Chest: [
+    ['Bench Press', ['Barbell', 'Dumbbell', 'Machine']],
+    ['Incline Bench Press', ['Barbell', 'Dumbbell', 'Machine']],
+    ['Chest Fly', ['Dumbbell', 'Cable', 'Machine']],
+    ['Push-Up', ['Bodyweight']],
+    ['Dip', ['Bodyweight', 'Machine']],
+  ],
+  Back: [
+    ['Deadlift', ['Barbell']],
+    ['Row', ['Barbell', 'Dumbbell', 'Cable', 'Machine']],
+    ['Pull-Up', ['Bodyweight']],
+    ['Chin-Up', ['Bodyweight']],
+    ['Lat Pulldown', ['Cable', 'Machine']],
+    ['Face Pull', ['Cable', 'Band']],
+    ['Shrug', ['Barbell', 'Dumbbell']],
+  ],
+  Legs: [
+    ['Squat', ['Barbell', 'Dumbbell', 'Kettlebell', 'Bodyweight']],
+    ['Front Squat', ['Barbell', 'Kettlebell']],
+    ['Goblet Squat', ['Dumbbell', 'Kettlebell']],
+    ['Leg Press', ['Machine']],
+    ['Lunge', ['Barbell', 'Dumbbell', 'Kettlebell', 'Bodyweight']],
+    ['Bulgarian Split Squat', ['Dumbbell', 'Bodyweight']],
+    ['Romanian Deadlift', ['Barbell', 'Dumbbell']],
+    ['Hip Thrust', ['Barbell', 'Machine']],
+    ['Leg Curl', ['Machine']],
+    ['Leg Extension', ['Machine']],
+    ['Calf Raise', ['Barbell', 'Dumbbell', 'Machine', 'Bodyweight']],
+  ],
+  Shoulders: [
+    ['Overhead Press', ['Barbell', 'Dumbbell', 'Kettlebell', 'Machine']],
+    ['Arnold Press', ['Dumbbell']],
+    ['Lateral Raise', ['Dumbbell', 'Cable']],
+    ['Front Raise', ['Dumbbell', 'Cable']],
+    ['Rear Delt Fly', ['Dumbbell', 'Cable', 'Machine']],
+    ['Upright Row', ['Barbell', 'Dumbbell', 'Cable']],
+  ],
+  Arms: [
+    ['Bicep Curl', ['Barbell', 'Dumbbell', 'Cable', 'Band']],
+    ['Hammer Curl', ['Dumbbell']],
+    ['Preacher Curl', ['Barbell', 'Dumbbell', 'Machine']],
+    ['Tricep Pushdown', ['Cable']],
+    ['Overhead Tricep Extension', ['Dumbbell', 'Cable']],
+    ['Skull Crusher', ['Barbell', 'Dumbbell']],
+    ['Close-Grip Bench Press', ['Barbell']],
+  ],
+  Core: [
+    ['Plank', ['Bodyweight']],
+    ['Side Plank', ['Bodyweight']],
+    ['Crunch', ['Bodyweight', 'Cable']],
+    ['Hanging Leg Raise', ['Bodyweight']],
+    ['Russian Twist', ['Bodyweight', 'Dumbbell', 'Kettlebell']],
+    ['Ab Wheel Rollout', ['Bodyweight']],
+  ],
+  Conditioning: [
+    ['Kettlebell Swing', ['Kettlebell']],
+    ["Farmer's Carry", ['Dumbbell', 'Kettlebell']],
+    ['Clean and Press', ['Barbell', 'Kettlebell', 'Dumbbell']],
+    ['Snatch', ['Barbell', 'Kettlebell', 'Dumbbell']],
+    ['Turkish Get-Up', ['Kettlebell']],
+    ['Burpee', ['Bodyweight']],
+  ],
+};
+const GROUPS = Object.keys(CATALOG);
+const ALL_EQUIP = ['Barbell', 'Dumbbell', 'Kettlebell', 'Bodyweight', 'Machine', 'Cable', 'Band'];
+const EQ_SHORT = { Barbell: 'BB', Dumbbell: 'DB', Kettlebell: 'KB', Bodyweight: 'BW', Machine: 'MACH', Cable: 'CBL', Band: 'BAND' };
+
+function allowedEquip(name) {
+  for (const g of GROUPS)
+    for (const e of CATALOG[g])
+      if (e[0] === name) return e[1];
+  return ALL_EQUIP;
+}
+function exKey(name, equip) {
+  return (name || '').trim().toLowerCase() + '|' + (equip || '').toLowerCase();
+}
 
 /* ================= helpers ================= */
 function esc(s) {
@@ -332,25 +486,25 @@ function ensureSession() {
   return s;
 }
 
-/* Most recent past performance of an exercise (excluding today's session) */
-function lastTime(name) {
-  const key = name.trim().toLowerCase();
+/* Most recent past performance of an exercise+equipment (excluding today's session) */
+function lastTime(name, equip) {
+  const key = exKey(name, equip);
   for (const w of sortedWorkouts()) {
     if (w.date === todayStr()) continue;
     for (const ex of w.exercises) {
-      if (ex.name.trim().toLowerCase() === key && ex.sets.length) {
+      if (exKey(ex.name, ex.equip) === key && ex.sets.length) {
         return { date: w.date, sets: ex.sets };
       }
     }
   }
   return null;
 }
-function maxWeight(name) {
-  const key = name.trim().toLowerCase();
+function maxWeight(name, equip) {
+  const key = exKey(name, equip);
   let m = 0;
   for (const w of db.workouts)
     for (const ex of w.exercises)
-      if (ex.name.trim().toLowerCase() === key)
+      if (exKey(ex.name, ex.equip) === key)
         for (const s of ex.sets) if (s.w > m) m = s.w;
   return m;
 }
@@ -358,10 +512,20 @@ function knownExercises() {
   const seen = new Map();
   for (const w of sortedWorkouts())
     for (const ex of w.exercises) {
-      const key = ex.name.trim().toLowerCase();
-      if (key && !seen.has(key)) seen.set(key, ex.name.trim());
+      const key = exKey(ex.name, ex.equip);
+      if (ex.name.trim() && !seen.has(key))
+        seen.set(key, { name: ex.name.trim(), equip: ex.equip || null, group: ex.group || null });
     }
   return [...seen.values()];
+}
+function lastBodyweight() {
+  const ds = Object.keys(db.bodyweight).sort();
+  if (!ds.length) return null;
+  const d = ds[ds.length - 1];
+  return { date: d, v: db.bodyweight[d] };
+}
+function equipTag(ex) {
+  return ex.equip ? '<span class="equiptag">' + esc(EQ_SHORT[ex.equip] || ex.equip) + '</span>' : '';
 }
 function setsSummary(sets) {
   return sets.map(s => fmtW(s.w) + '×' + s.r).join(', ');
@@ -388,6 +552,7 @@ function render() {
   document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   const v = document.getElementById('view');
   if (tab === 'log') v.innerHTML = renderLog();
+  else if (tab === 'calendar') v.innerHTML = renderCalendar();
   else if (tab === 'history') v.innerHTML = renderHistory();
   else v.innerHTML = renderData();
   if (tab === 'data') refreshPersistStatus();
@@ -395,10 +560,10 @@ function render() {
 
 function pendingFor(ex) {
   if (!ui.pending[ex.id]) {
-    let w = unit() === 'kg' ? 20 : 45, r = 8;
+    let w = ex.equip === 'Bodyweight' ? 0 : (unit() === 'kg' ? 20 : 45), r = 8;
     if (ex.sets.length) { const l = ex.sets[ex.sets.length - 1]; w = l.w; r = l.r; }
     else {
-      const lt = lastTime(ex.name);
+      const lt = lastTime(ex.name, ex.equip);
       if (lt) { const l = lt.sets[lt.sets.length - 1]; w = l.w; r = l.r; }
     }
     ui.pending[ex.id] = { w, r };
@@ -411,18 +576,23 @@ function renderLog() {
   let h = '<div class="viewdate">' + fmtLong(todayStr()) + '</div>';
   const n = nudgeInfo();
   if (n) h += '<div class="nudge"><span>' + n + '</span><button data-act="nudge-export">Export</button></div>';
+
+  /* body weight */
+  const bwToday = db.bodyweight[todayStr()];
+  const lastBw = lastBodyweight();
+  h += '<div class="bwcard"><div><div class="bwlbl">Body weight</div>'
+    + (bwToday != null
+        ? '<div class="bwhint ok">Logged today</div>'
+        : (lastBw ? '<div class="bwhint">Last ' + fmtW(lastBw.v) + ' ' + unit() + ' · ' + fmtShort(lastBw.date) + '</div>' : '<div class="bwhint">Not logged yet</div>'))
+    + '</div><div class="bwinput"><input inputmode="decimal" id="bwInput" aria-label="Body weight" placeholder="' + (lastBw ? fmtW(lastBw.v) : '—') + '" value="' + (bwToday != null ? fmtW(bwToday) : '') + '"><span>' + unit() + '</span></div></div>';
+
   if (!s || !s.exercises.length) {
     h += '<div class="viewsub">Nothing logged yet. Add your first exercise to start today’s session.</div>';
   }
   if (s) h += s.exercises.map(ex => renderExercise(ex)).join('');
 
   if (ui.addingEx) {
-    const chips = knownExercises().slice(0, 8);
-    h += '<div class="addform">'
-      + '<input type="text" id="exNameInput" placeholder="Exercise name" autocomplete="off" enterkeyhint="done">'
-      + (chips.length ? '<div class="chips">' + chips.map(c => '<button class="chip" data-act="pick-ex" data-name="' + esc(c) + '">' + esc(c) + '</button>').join('') + '</div>' : '')
-      + '<div class="addrow"><button class="go" data-act="confirm-ex">Add exercise</button><button class="cancel" data-act="cancel-ex">Cancel</button></div>'
-      + '</div>';
+    h += renderAddForm();
   } else {
     h += '<button class="addex" data-act="add-ex">+ Add exercise</button>';
   }
@@ -434,12 +604,53 @@ function renderLog() {
   return h;
 }
 
+function renderAddForm() {
+  const chips = knownExercises().slice(0, 8);
+  let h = '<div class="addform">';
+
+  if (ui.addMode === 'custom') {
+    h += '<div class="flabel">Exercise name</div>'
+      + '<input type="text" id="exNameInput" placeholder="e.g. Nordic Curl" autocomplete="off" enterkeyhint="done" value="' + esc(ui.customName) + '">'
+      + '<div class="flabel">Body group</div><div class="chips">'
+      + GROUPS.concat('Other').map(g => '<button class="chip' + (ui.addGroup === g ? ' on' : '') + '" data-act="grp" data-g="' + esc(g) + '">' + esc(g) + '</button>').join('')
+      + '</div>'
+      + '<div class="flabel">Equipment · optional</div><div class="chips">'
+      + ALL_EQUIP.map(q => '<button class="chip' + (ui.addEquip === q ? ' on' : '') + '" data-act="equip" data-e="' + esc(q) + '">' + esc(q) + '</button>').join('')
+      + '</div>'
+      + '<button class="modelink" data-act="mode-browse">‹ Back to exercise list</button>';
+  } else {
+    if (chips.length) {
+      h += '<div class="flabel">Recent</div><div class="chips">'
+        + chips.map(c => '<button class="chip" data-act="pick-ex" data-name="' + esc(c.name) + '" data-equip="' + esc(c.equip || '') + '" data-group="' + esc(c.group || '') + '">' + esc(c.name) + (c.equip ? ' · ' + esc(EQ_SHORT[c.equip] || c.equip) : '') + '</button>').join('')
+        + '</div>';
+    }
+    h += '<div class="flabel">Body group</div><div class="chips">'
+      + GROUPS.map(g => '<button class="chip' + (ui.addGroup === g ? ' on' : '') + '" data-act="grp" data-g="' + esc(g) + '">' + esc(g) + '</button>').join('')
+      + '</div>';
+    if (ui.addGroup && CATALOG[ui.addGroup]) {
+      h += '<div class="flabel">Exercise</div><select class="exsel" id="exSelect">'
+        + '<option value="">Choose exercise…</option>'
+        + CATALOG[ui.addGroup].map(e => '<option' + (ui.addExName === e[0] ? ' selected' : '') + '>' + esc(e[0]) + '</option>').join('')
+        + '</select>';
+    }
+    if (ui.addExName) {
+      h += '<div class="flabel">Equipment</div><div class="chips">'
+        + allowedEquip(ui.addExName).map(q => '<button class="chip' + (ui.addEquip === q ? ' on' : '') + '" data-act="equip" data-e="' + esc(q) + '">' + esc(q) + '</button>').join('')
+        + '</div>';
+    }
+    h += '<button class="modelink" data-act="mode-custom">Can’t find it? Type your own</button>';
+  }
+
+  h += '<div class="addrow"><button class="go" data-act="confirm-ex">Add exercise</button><button class="cancel" data-act="cancel-ex">Cancel</button></div></div>';
+  return h;
+}
+
 function renderExercise(ex) {
   const p = pendingFor(ex);
-  const lt = lastTime(ex.name);
+  const lt = lastTime(ex.name, ex.equip);
   const armed = ui.armed === 'ex-' + ex.id;
   let h = '<div class="excard">'
-    + '<div class="exhead"><div class="exname">' + esc(ex.name) + '</div>'
+    + '<div class="exhead"><div class="exname">' + esc(ex.name) + equipTag(ex) + '</div>'
     + '<button class="exdrop' + (armed ? ' arm' : '') + '" data-act="del-ex" data-id="' + ex.id + '">' + (armed ? 'Remove?' : 'remove') + '</button></div>';
   if (lt) h += '<div class="lasttime">Last time <b>' + esc(setsSummary(lt.sets)) + '</b> · ' + fmtShort(lt.date) + '</div>';
 
@@ -470,6 +681,57 @@ function renderExercise(ex) {
   return h + '</div>';
 }
 
+function renderCalendar() {
+  if (ui.calY == null) { const n = new Date(); ui.calY = n.getFullYear(); ui.calM = n.getMonth(); }
+  const y = ui.calY, m = ui.calM;
+  const first = new Date(y, m, 1);
+  const label = first.toLocaleDateString(undefined, { month: 'long', year: 'numeric' });
+  const startDow = (first.getDay() + 6) % 7; /* Monday-first grid */
+  const daysIn = new Date(y, m + 1, 0).getDate();
+  const pad2 = (n) => String(n).padStart(2, '0');
+  const wk = new Map(db.workouts.filter(w => w.exercises.length).map(w => [w.date, w]));
+  const today = todayStr();
+
+  let h = '<div class="viewdate">Calendar</div>'
+    + '<div class="calhead"><button data-act="cal-prev" aria-label="Previous month">‹</button>'
+    + '<span class="mon">' + label + '</span>'
+    + '<button data-act="cal-next" aria-label="Next month">›</button></div>'
+    + '<div class="calgrid">'
+    + ['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU'].map(d => '<span class="caldow">' + d + '</span>').join('');
+  for (let i = 0; i < startDow; i++) h += '<span></span>';
+  for (let d = 1; d <= daysIn; d++) {
+    const ds = y + '-' + pad2(m + 1) + '-' + pad2(d);
+    const cls = ['calday'];
+    if (wk.has(ds)) cls.push('haswk');
+    if (ds === today) cls.push('today');
+    if (ds === ui.calSel) cls.push('sel');
+    h += '<button class="' + cls.join(' ') + '" data-act="cal-day" data-d="' + ds + '">' + d
+      + (db.bodyweight[ds] != null ? '<span class="bwdot"></span>' : '') + '</button>';
+  }
+  h += '</div><div class="callegend"><span class="wk">●</span> workout &nbsp; <span class="bw">•</span> body weight logged</div>';
+  if (ui.calSel) h += calDetail(ui.calSel);
+  return h;
+}
+
+function calDetail(ds) {
+  const w = db.workouts.find(x => x.date === ds);
+  const bw = db.bodyweight[ds];
+  let h = '<div class="caldetail"><div class="hcard"><div style="padding:14px">'
+    + '<div class="hdate">' + fmtShort(ds) + (ds === todayStr() ? ' · Today' : '') + '</div>';
+  if (bw != null) h += '<div class="hexsets" style="margin-top:4px">Body weight ' + fmtW(bw) + ' ' + unit() + '</div>';
+  if (w && w.exercises.length) {
+    h += w.exercises.map(e =>
+      '<div class="hex"><div class="hexname">' + esc(e.name) + equipTag(e) + '</div>'
+      + '<div class="hexsets">' + e.sets.map(s => (s.pr ? '<span class="pr">' : '') + fmtW(s.w) + '×' + s.r + (s.pr ? ' PR</span>' : '')).join(', ') + '</div>'
+      + (e.notes ? '<div class="hexnote">' + esc(e.notes) + '</div>' : '')
+      + '</div>').join('');
+    if (w.note) h += '<div class="hexnote" style="padding-top:8px">' + esc(w.note) + '</div>';
+  } else if (bw == null) {
+    h += '<div class="hexsets" style="margin-top:4px">No entry.</div>';
+  }
+  return h + '</div></div></div>';
+}
+
 function renderHistory() {
   const ws = sortedWorkouts();
   let h = '<div class="viewdate">History</div>';
@@ -487,8 +749,9 @@ function renderHistory() {
       + '<span class="hdate">' + fmtShort(w.date) + (w.date === todayStr() ? ' · Today' : '') + '</span>'
       + '<span class="hmeta num">' + nEx + ' ex · ' + nSets + ' sets<br>' + Math.round(vol).toLocaleString() + ' ' + unit() + ' vol</span>'
       + '</summary><div class="hbody">'
+      + (db.bodyweight[w.date] != null ? '<div class="hexnote" style="padding:8px 0 0">Body weight ' + fmtW(db.bodyweight[w.date]) + ' ' + unit() + '</div>' : '')
       + w.exercises.map(e =>
-          '<div class="hex"><div class="hexname">' + esc(e.name) + '</div>'
+          '<div class="hex"><div class="hexname">' + esc(e.name) + equipTag(e) + '</div>'
           + '<div class="hexsets">' + e.sets.map(s => (s.pr ? '<span class="pr">' : '') + fmtW(s.w) + '×' + s.r + (s.pr ? ' PR</span>' : '')).join(', ') + '</div>'
           + (e.notes ? '<div class="hexnote">' + esc(e.notes) + '</div>' : '')
           + '</div>').join('')
@@ -559,7 +822,7 @@ function arm(id) {
 }
 
 function doExport() {
-  const payload = { app: 'ironlog', version: 1, exported: new Date().toISOString(), settings: { unit: unit() }, workouts: db.workouts };
+  const payload = { app: 'ironlog', version: 2, exported: new Date().toISOString(), settings: { unit: unit() }, workouts: db.workouts, bodyweight: db.bodyweight };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -575,21 +838,46 @@ function doExport() {
   setTimeout(() => { ui.exportedFlash = false; render(); }, 2200);
 }
 
-function addExercise(name) {
-  name = name.trim();
+function addExercise(def) {
+  const name = (def.name || '').trim();
   if (!name) return;
   const s = ensureSession();
-  const known = knownExercises().find(k => k.toLowerCase() === name.toLowerCase());
-  s.exercises.push({ id: uid(), name: known || name, notes: '', sets: [] });
-  ui.addingEx = false;
+  s.exercises.push({ id: uid(), name, group: def.group || null, equip: def.equip || null, notes: '', sets: [] });
+  resetAddForm(false);
   save(); render();
+}
+function resetAddForm(open) {
+  ui.addingEx = open;
+  ui.addMode = 'browse';
+  ui.addGroup = null; ui.addExName = null; ui.addEquip = null; ui.customName = '';
 }
 
 const actions = {
-  'add-ex': () => { ui.addingEx = true; render(); setTimeout(() => { const i = document.getElementById('exNameInput'); if (i) i.focus(); }, 50); },
-  'cancel-ex': () => { ui.addingEx = false; render(); },
-  'confirm-ex': () => { const i = document.getElementById('exNameInput'); addExercise(i ? i.value : ''); },
-  'pick-ex': (el) => addExercise(el.dataset.name),
+  'add-ex': () => { resetAddForm(true); render(); },
+  'cancel-ex': () => { resetAddForm(false); render(); },
+  'confirm-ex': () => {
+    if (ui.addMode === 'custom') {
+      addExercise({ name: ui.customName, group: ui.addGroup || 'Other', equip: ui.addEquip });
+    } else if (ui.addExName) {
+      addExercise({ name: ui.addExName, group: ui.addGroup, equip: ui.addEquip });
+    }
+  },
+  'pick-ex': (el) => addExercise({ name: el.dataset.name, equip: el.dataset.equip || null, group: el.dataset.group || null }),
+  'grp': (el) => {
+    ui.addGroup = el.dataset.g;
+    if (ui.addMode !== 'custom') { ui.addExName = null; ui.addEquip = null; }
+    render();
+  },
+  'equip': (el) => {
+    const q = el.dataset.e;
+    ui.addEquip = (ui.addMode === 'custom' && ui.addEquip === q) ? null : q;
+    render();
+  },
+  'mode-custom': () => { ui.addMode = 'custom'; ui.addGroup = null; ui.addExName = null; ui.addEquip = null; render(); setTimeout(() => { const i = document.getElementById('exNameInput'); if (i) i.focus(); }, 50); },
+  'mode-browse': () => { ui.addMode = 'browse'; ui.addGroup = null; ui.addEquip = null; ui.customName = ''; render(); },
+  'cal-prev': () => { ui.calM--; if (ui.calM < 0) { ui.calM = 11; ui.calY--; } ui.calSel = null; render(); },
+  'cal-next': () => { ui.calM++; if (ui.calM > 11) { ui.calM = 0; ui.calY++; } ui.calSel = null; render(); },
+  'cal-day': (el) => { ui.calSel = (ui.calSel === el.dataset.d) ? null : el.dataset.d; render(); },
   'w+': (el) => { const p = ui.pending[el.dataset.id]; p.w = Math.max(0, Math.round((p.w + wStep()) * 100) / 100); render(); },
   'w-': (el) => { const p = ui.pending[el.dataset.id]; p.w = Math.max(0, Math.round((p.w - wStep()) * 100) / 100); render(); },
   'r+': (el) => { const p = ui.pending[el.dataset.id]; p.r = Math.min(999, p.r + 1); render(); },
@@ -598,7 +886,7 @@ const actions = {
     const s = getSession(); if (!s) return;
     const ex = s.exercises.find(e => e.id === el.dataset.id); if (!ex) return;
     const p = pendingFor(ex);
-    const prev = maxWeight(ex.name);
+    const prev = maxWeight(ex.name, ex.equip);
     const set = { w: p.w, r: p.r };
     if (prev > 0 && p.w > prev) set.pr = true;
     ex.sets.push(set);
@@ -629,24 +917,28 @@ const actions = {
   'import-merge': () => {
     const have = new Set(db.workouts.map(w => w.id));
     for (const w of ui.importPending.workouts) if (!have.has(w.id)) db.workouts.push(w);
+    if (ui.importPending.bodyweight)
+      for (const k in ui.importPending.bodyweight)
+        if (!(k in db.bodyweight)) db.bodyweight[k] = ui.importPending.bodyweight[k];
     ui.importPending = null; save(); render();
   },
   'import-replace': () => {
     db.workouts = ui.importPending.workouts;
+    db.bodyweight = ui.importPending.bodyweight || {};
     ui.importPending = null; save(); render();
   },
   'import-cancel': () => { ui.importPending = null; render(); },
   'unit': (el) => { db.settings.unit = el.dataset.u; save(); render(); },
   'erase': () => {
     if (!arm('erase')) { render(); return; }
-    db = { workouts: [], settings: { unit: unit(), lastExport: null, nudgeSnooze: null } };
+    db = { workouts: [], bodyweight: {}, settings: { unit: unit(), lastExport: null, nudgeSnooze: null } };
     save(); render();
   },
 };
 
 document.addEventListener('click', (e) => {
   const tabBtn = e.target.closest('nav.tabs button');
-  if (tabBtn) { tab = tabBtn.dataset.tab; ui.addingEx = false; ui.armed = null; render(); return; }
+  if (tabBtn) { tab = tabBtn.dataset.tab; resetAddForm(false); ui.armed = null; render(); return; }
   const el = e.target.closest('[data-act]');
   if (!el) return;
   const fn = actions[el.dataset.act];
@@ -665,6 +957,15 @@ document.addEventListener('change', (e) => {
     const v = parseInt(t.value, 10);
     p.r = isFinite(v) && v >= 1 ? Math.min(999, v) : p.r;
     t.value = p.r;
+  } else if (t.id === 'exSelect') {
+    ui.addExName = t.value || null;
+    ui.addEquip = ui.addExName ? allowedEquip(ui.addExName)[0] : null;
+    render();
+  } else if (t.id === 'bwInput') {
+    const v = parseFloat(String(t.value).replace(',', '.'));
+    if (t.value.trim() === '') delete db.bodyweight[todayStr()];
+    else if (isFinite(v) && v > 0 && v < 1000) db.bodyweight[todayStr()] = Math.round(v * 10) / 10;
+    save(); render();
   } else if (t.id === 'importFile') {
     const f = t.files[0];
     t.value = '';
@@ -684,6 +985,7 @@ document.addEventListener('change', (e) => {
 /* notes save as you type, without re-render */
 document.addEventListener('input', (e) => {
   const t = e.target;
+  if (t.id === 'exNameInput') { ui.customName = t.value; return; }
   if (!t.dataset || !t.dataset.note) return;
   if (t.dataset.note === 'session') {
     const s = getSession();
@@ -697,7 +999,11 @@ document.addEventListener('input', (e) => {
 
 /* Enter key in add-exercise input */
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && e.target.id === 'exNameInput') { e.preventDefault(); addExercise(e.target.value); }
+  if (e.key === 'Enter' && e.target.id === 'exNameInput') {
+    e.preventDefault();
+    ui.customName = e.target.value;
+    actions['confirm-ex']();
+  }
 });
 
 /* ask the browser not to evict our data */
