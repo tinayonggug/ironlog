@@ -248,6 +248,29 @@
   }
   .bwinput span { color: var(--faint); font-size: 12px; text-transform: uppercase; }
 
+  /* ---------- TDEE / profile ---------- */
+  .tdee {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    background: var(--ink1); border: 1px solid var(--line); border-radius: 12px;
+    padding: 12px 14px; margin-bottom: 14px;
+  }
+  .tdee .tval { font-family: var(--disp); font-weight: 700; font-size: 24px; font-variant-numeric: tabular-nums; }
+  .tdee .tsub { color: var(--dim); font-size: 13px; text-align: right; line-height: 1.5; font-variant-numeric: tabular-nums; }
+  .setupcard {
+    display: flex; align-items: center; gap: 10px;
+    background: color-mix(in srgb, var(--blue) 10%, var(--ink1));
+    border: 1px solid color-mix(in srgb, var(--blue) 40%, transparent);
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 14px;
+  }
+  .setupbtns { display: flex; gap: 4px; margin-left: auto; flex-shrink: 0; align-items: center; }
+  .setupgo { background: var(--blue); color: #0D1420; font-weight: 600; font-size: 14px; padding: 8px 14px; border-radius: 8px; min-height: 40px; }
+  .setupno { color: var(--faint); font-size: 14px; padding: 8px 10px; min-height: 40px; }
+  .pinput {
+    background: var(--ink2); border: 1px solid var(--line); border-radius: 8px;
+    padding: 9px 12px; font-size: 15px; color: var(--chalk);
+  }
+  input[type=date].pinput { color-scheme: dark; font-family: var(--ui); }
+
   /* ---------- add form v2 ---------- */
   .flabel { font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); margin: 12px 0 6px; }
   .flabel:first-child { margin-top: 0; }
@@ -409,11 +432,12 @@ function load() {
       const d = JSON.parse(raw);
       if (d && Array.isArray(d.workouts)) {
         if (!d.bodyweight) d.bodyweight = {};
+        if (!d.profile) d.profile = {};
         return d;
       }
     }
   } catch (e) {}
-  return { workouts: [], bodyweight: {}, settings: { unit: 'kg', lastExport: null, nudgeSnooze: null } };
+  return { workouts: [], bodyweight: {}, profile: {}, settings: { unit: 'kg', lastExport: null, nudgeSnooze: null } };
 }
 function save() { localStorage.setItem(KEY, JSON.stringify(db)); }
 
@@ -586,6 +610,47 @@ function equipTag(ex) {
   return ex.equip ? '<span class="equiptag">' + esc(EQ_SHORT[ex.equip] || ex.equip) + '</span>' : '';
 }
 
+/* ================= TDEE ================= */
+const ACTIVITY = [
+  [1.2, 'Sedentary', 'little exercise'],
+  [1.375, 'Light', '1–3 sessions/week'],
+  [1.55, 'Moderate', '3–5 sessions/week'],
+  [1.725, 'Active', '6–7 sessions/week'],
+  [1.9, 'Athlete', 'hard daily training'],
+];
+const GOALS = [[-500, 'Cut'], [-250, 'Lean cut'], [0, 'Maintain'], [250, 'Lean bulk'], [500, 'Bulk']];
+
+function ageFromDob(dob) {
+  const b = new Date(dob + 'T12:00:00'), n = new Date();
+  let a = n.getFullYear() - b.getFullYear();
+  const m = n.getMonth() - b.getMonth();
+  if (m < 0 || (m === 0 && n.getDate() < b.getDate())) a--;
+  return a;
+}
+function profileComplete() {
+  const p = db.profile;
+  return !!(p && p.dob && p.heightCm && p.sex);
+}
+/* Mifflin-St Jeor BMR x activity multiplier */
+function tdeeInfo() {
+  if (!profileComplete()) return null;
+  const p = db.profile;
+  const age = ageFromDob(p.dob);
+  if (!(age > 0 && age < 120)) return null;
+  const lb = lastBodyweight();
+  if (!lb) return { missingWeight: true };
+  const kg = unit() === 'lb' ? lb.v * 0.45359237 : lb.v;
+  const bmr = Math.round(10 * kg + 6.25 * p.heightCm - 5 * age + (p.sex === 'm' ? 5 : -161));
+  const tdee = Math.round(bmr * (p.activity || 1.55));
+  const goal = p.goal || 0;
+  return { bmr, tdee, goal, target: tdee + goal, age, wDisplay: lb.v };
+}
+function goalLabel(g) {
+  const f = GOALS.find(x => x[0] === g);
+  if (!f) return '';
+  return f[1] + (g ? ' ' + (g > 0 ? '+' : '−') + Math.abs(g) : '');
+}
+
 /* classify a workout by the body groups it hits */
 const UPPER_GROUPS = ['Chest', 'Back', 'Shoulders', 'Arms'];
 const TYPE_LABEL = { upper: 'Upper body', lower: 'Lower body', full: 'Full body', cardio: 'Cardio', other: 'Other' };
@@ -682,6 +747,20 @@ function renderLog() {
         ? '<div class="bwhint ok">Logged</div>'
         : (lastBw ? '<div class="bwhint">Last ' + fmtW(lastBw.v) + ' ' + unit() + ' · ' + fmtShort(lastBw.date) + '</div>' : '<div class="bwhint">Not logged yet</div>'))
     + '</div><div class="bwinput"><input inputmode="decimal" id="bwInput" aria-label="Body weight" placeholder="' + (lastBw ? fmtW(lastBw.v) : '—') + '" value="' + (bwDay != null ? fmtW(bwDay) : '') + '"><span>' + unit() + '</span></div></div>';
+
+  /* calorie target from profile + latest weight */
+  if (isToday) {
+    const ti = tdeeInfo();
+    if (ti && !ti.missingWeight) {
+      h += '<div class="tdee"><div><div class="bwlbl">Daily target</div><div class="tval">' + ti.target.toLocaleString() + ' kcal</div></div>'
+        + '<div class="tsub">TDEE ' + ti.tdee.toLocaleString() + ' kcal<br>' + goalLabel(ti.goal) + '</div></div>';
+    } else if (ti && ti.missingWeight) {
+      h += '<div class="tdee"><div class="bwhint">Log your body weight above to see your daily calorie target.</div></div>';
+    } else if (!profileComplete() && !db.settings.tdeeDismissed) {
+      h += '<div class="setupcard"><span>Add your age &amp; height once to get a daily calorie target (TDEE).</span>'
+        + '<span class="setupbtns"><button class="setupgo" data-act="setup-tdee">Set up</button><button class="setupno" data-act="dismiss-tdee">Later</button></span></div>';
+    }
+  }
 
   /* completed session -> confirmation card */
   if (s && s.done && s.exercises.length) {
@@ -936,6 +1015,34 @@ function renderData() {
   }
   h += '<div class="dhint">Everything lives on this device only. Export before deleting the app icon or switching phones.</div></div>';
 
+  /* profile + calorie targets */
+  const p = db.profile;
+  const ti = tdeeInfo();
+  h += '<div class="dsec"><h2>Profile &amp; calories</h2>'
+    + '<div class="drow"><span class="lbl">Date of birth</span><span>'
+    + (p.dob ? '<span class="val num" style="color:var(--dim);margin-right:8px">' + ageFromDob(p.dob) + 'y</span>' : '')
+    + '<input type="date" class="pinput" id="dobInput" value="' + esc(p.dob || '') + '"></span></div>'
+    + '<div class="drow"><span class="lbl">Height</span><span><input class="pinput" style="width:80px;text-align:right" inputmode="decimal" id="htInput" value="'
+    + (p.heightCm ? (unit() === 'kg' ? Math.round(p.heightCm) : fmtW(Math.round(p.heightCm / 2.54 * 10) / 10)) : '') + '"> <span class="lbl">' + (unit() === 'kg' ? 'cm' : 'in') + '</span></span></div>'
+    + '<div class="drow"><span class="lbl">Sex</span><div class="seg">'
+    + '<button data-act="sex" data-s="m" class="' + (p.sex === 'm' ? 'on' : '') + '">Male</button>'
+    + '<button data-act="sex" data-s="f" class="' + (p.sex === 'f' ? 'on' : '') + '">Female</button></div></div>'
+    + '<div class="drow"><span class="lbl">Activity</span><select class="exsel" id="actSelect" style="width:auto;padding:9px 12px;font-size:14px">'
+    + ACTIVITY.map(a => '<option value="' + a[0] + '"' + ((p.activity || 1.55) === a[0] ? ' selected' : '') + '>' + a[1] + ' · ' + a[2] + '</option>').join('')
+    + '</select></div>'
+    + '<div class="flabel">Goal</div><div class="chips">'
+    + GOALS.map(g => '<button class="chip' + ((p.goal || 0) === g[0] ? ' on' : '') + '" data-act="goal" data-g="' + g[0] + '">' + g[1] + (g[0] ? ' ' + (g[0] > 0 ? '+' : '−') + Math.abs(g[0]) : '') + '</button>').join('')
+    + '</div>';
+  if (ti && !ti.missingWeight) {
+    h += '<div class="tdee" style="margin:14px 0 0"><div><div class="bwlbl">Daily target</div><div class="tval">' + ti.target.toLocaleString() + ' kcal</div></div>'
+      + '<div class="tsub">BMR ' + ti.bmr.toLocaleString() + ' · TDEE ' + ti.tdee.toLocaleString() + ' kcal<br>' + fmtW(ti.wDisplay) + ' ' + unit() + ' · ' + Math.round(p.heightCm) + ' cm · age ' + ti.age + '</div></div>';
+  } else if (ti && ti.missingWeight) {
+    h += '<div class="dhint">Log a body weight on the Log tab to calculate your targets.</div>';
+  } else {
+    h += '<div class="dhint">Fill in date of birth, height and sex to calculate your daily calories.</div>';
+  }
+  h += '<div class="dhint">Estimates use the Mifflin-St Jeor formula and update automatically with your latest body weight.</div></div>';
+
   h += '<div class="dsec"><h2>Storage</h2>'
     + '<div class="drow"><span class="lbl">Persistent storage</span><span class="val" id="persistStatus">checking…</span></div>'
     + '<div class="drow"><span class="lbl">Workouts stored</span><span class="val num">' + db.workouts.length + '</span></div>'
@@ -976,7 +1083,7 @@ function arm(id) {
 }
 
 function doExport() {
-  const payload = { app: 'ironlog', version: 2, exported: new Date().toISOString(), settings: { unit: unit() }, workouts: db.workouts, bodyweight: db.bodyweight };
+  const payload = { app: 'ironlog', version: 3, exported: new Date().toISOString(), settings: { unit: unit() }, workouts: db.workouts, bodyweight: db.bodyweight, profile: db.profile };
   const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
@@ -1106,18 +1213,24 @@ const actions = {
     if (ui.importPending.bodyweight)
       for (const k in ui.importPending.bodyweight)
         if (!(k in db.bodyweight)) db.bodyweight[k] = ui.importPending.bodyweight[k];
+    if (ui.importPending.profile && !profileComplete()) db.profile = ui.importPending.profile;
     ui.importPending = null; save(); render();
   },
   'import-replace': () => {
     db.workouts = ui.importPending.workouts;
     db.bodyweight = ui.importPending.bodyweight || {};
+    db.profile = ui.importPending.profile || {};
     ui.importPending = null; save(); render();
   },
   'import-cancel': () => { ui.importPending = null; render(); },
   'unit': (el) => { db.settings.unit = el.dataset.u; save(); render(); },
+  'sex': (el) => { db.profile.sex = el.dataset.s; save(); render(); },
+  'goal': (el) => { db.profile.goal = parseInt(el.dataset.g, 10); save(); render(); },
+  'setup-tdee': () => { tab = 'data'; render(); },
+  'dismiss-tdee': () => { db.settings.tdeeDismissed = true; save(); render(); },
   'erase': () => {
     if (!arm('erase')) { render(); return; }
-    db = { workouts: [], bodyweight: {}, settings: { unit: unit(), lastExport: null, nudgeSnooze: null } };
+    db = { workouts: [], bodyweight: {}, profile: {}, settings: { unit: unit(), lastExport: null, nudgeSnooze: null } };
     save(); render();
   },
 };
@@ -1161,6 +1274,17 @@ document.addEventListener('change', (e) => {
     const v = parseFloat(String(t.value).replace(',', '.'));
     if (t.value.trim() === '') delete db.bodyweight[LD()];
     else if (isFinite(v) && v > 0 && v < 1000) db.bodyweight[LD()] = Math.round(v * 10) / 10;
+    save(); render();
+  } else if (t.id === 'dobInput') {
+    db.profile.dob = t.value || null;
+    save(); render();
+  } else if (t.id === 'htInput') {
+    const v = parseFloat(String(t.value).replace(',', '.'));
+    if (t.value.trim() === '') db.profile.heightCm = null;
+    else if (isFinite(v) && v > 0 && v < 300) db.profile.heightCm = Math.round((unit() === 'lb' ? v * 2.54 : v) * 10) / 10;
+    save(); render();
+  } else if (t.id === 'actSelect') {
+    db.profile.activity = parseFloat(t.value);
     save(); render();
   } else if (t.id === 'importFile') {
     const f = t.files[0];
