@@ -101,8 +101,8 @@
   .exname { font-family: var(--disp); font-weight: 700; font-size: 22px; text-transform: uppercase; letter-spacing: .03em; }
   .exdrop { margin-left: auto; color: var(--faint); font-size: 13px; padding: 4px 6px; min-height: 32px; }
   .exdrop.arm { color: var(--red); font-weight: 600; }
-  .lasttime { color: var(--faint); font-size: 13px; margin-top: 2px; }
-  .lasttime b { color: var(--dim); font-weight: 500; }
+  .lasttime { color: var(--dim); font-size: 14px; margin-top: 2px; }
+  .lasttime b { color: var(--chalk); font-weight: 600; }
 
   .setrows { margin: 10px 0 4px; }
   .setrow {
@@ -118,7 +118,8 @@
     color: var(--red); border: 1px solid var(--red); border-radius: 5px;
     padding: 1px 6px;
   }
-  .setdel { margin-left: auto; color: var(--faint); font-size: 18px; padding: 2px 10px; min-height: 36px; }
+  .setdel { margin-left: auto; color: var(--faint); font-size: 18px; padding: 2px 10px; min-height: 44px; }
+  .setdel.arm { color: var(--red); font-size: 13px; font-weight: 600; }
 
   /* ---------- steppers ---------- */
   .logbar { display: flex; gap: 10px; margin-top: 12px; }
@@ -715,8 +716,10 @@ function render() {
 
 function pendingFor(ex) {
   if (!ui.pending[ex.id]) {
-    const last = ex.sets.length ? ex.sets[ex.sets.length - 1]
-      : (lastTime(ex.name, ex.equip) || { sets: [] }).sets.slice(-1)[0];
+    /* mid-session: continue from this session's last set;
+       fresh exercise: start where last session STARTED (its first set), not its top set */
+    const lt = lastTime(ex.name, ex.equip);
+    const last = ex.sets.length ? ex.sets[ex.sets.length - 1] : (lt ? lt.sets[0] : null);
     if (isCardio(ex)) {
       ui.pending[ex.id] = { min: last && last.min != null ? last.min : 30, dist: last && last.dist ? last.dist : 0 };
     } else if (last && last.w != null) {
@@ -866,7 +869,8 @@ function renderExercise(ex) {
           : fmtW(s.w) + ' ' + unit() + '<span class="x">×</span>' + s.r)
       + '</span>'
       + (s.pr ? '<span class="prchip">PR</span>' : '')
-      + '<button class="setdel" data-act="del-set" data-id="' + ex.id + '" data-i="' + i + '" aria-label="Delete set">×</button></div>'
+      + '<button class="setdel' + (ui.armed === 'set-' + ex.id + '-' + i ? ' arm' : '') + '" data-act="del-set" data-id="' + ex.id + '" data-i="' + i + '" aria-label="Delete set">'
+      + (ui.armed === 'set-' + ex.id + '-' + i ? 'Delete?' : '×') + '</button></div>'
     ).join('') + '</div>';
   }
 
@@ -1186,6 +1190,7 @@ const actions = {
     if (ex) { ex.done = false; save(); render(); }
   },
   'del-set': (el) => {
+    if (!arm('set-' + el.dataset.id + '-' + el.dataset.i)) { render(); return; }
     const s = getSession(); if (!s) return;
     const ex = s.exercises.find(e => e.id === el.dataset.id); if (!ex) return;
     ex.sets.splice(Number(el.dataset.i), 1);
