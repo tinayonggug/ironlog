@@ -146,6 +146,13 @@
   .logset:active { background: var(--blue-deep); color: var(--chalk); }
 
   .notewrap { margin-top: 10px; }
+  .exfoot { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .exdone { color: var(--green); font-size: 13px; font-weight: 600; padding: 6px 2px; min-height: 36px; }
+  .excard.isdone { border-color: color-mix(in srgb, var(--green) 35%, var(--line)); padding-bottom: 12px; }
+  .excard.isdone .exname { font-size: 19px; }
+  .donechk { margin-left: auto; color: var(--green); font-weight: 700; font-size: 16px; }
+  .donesum { color: var(--dim); font-size: 14px; font-variant-numeric: tabular-nums; margin-top: 4px; }
+  .editlink { color: var(--faint); font-size: 13px; padding: 8px 2px 0; min-height: 36px; text-decoration: underline; }
   .notebtn { color: var(--faint); font-size: 13px; padding: 6px 2px; min-height: 36px; }
   textarea.note {
     width: 100%; background: var(--ink2); border: 1px solid var(--line); border-radius: 8px;
@@ -482,6 +489,19 @@ const CATALOG = {
     ['Turkish Get-Up', ['Kettlebell']],
     ['Burpee', ['Bodyweight']],
   ],
+  Cardio: [
+    ['Treadmill', ['Machine']],
+    ['Elliptical', ['Machine']],
+    ['Rowing Machine', ['Machine']],
+    ['Stair Climber', ['Machine']],
+    ['Exercise Bike', ['Machine']],
+    ['Brisk Walk', []],
+    ['Jogging', []],
+    ['Running', []],
+    ['Cycling', []],
+    ['Swimming', []],
+    ['Jump Rope', []],
+  ],
 };
 const GROUPS = Object.keys(CATALOG);
 const ALL_EQUIP = ['Barbell', 'Dumbbell', 'Kettlebell', 'Bodyweight', 'Machine', 'Cable', 'Band'];
@@ -581,7 +601,7 @@ function workoutType(w) {
   for (const ex of w.exercises) {
     const g = exerciseGroup(ex);
     if (g === 'Legs') lo++;
-    else if (g === 'Conditioning') cd++;
+    else if (g === 'Conditioning' || g === 'Cardio') cd++;
     else if (UPPER_GROUPS.includes(g)) up++;
   }
   if (up && lo) return 'full';
@@ -590,9 +610,16 @@ function workoutType(w) {
   if (cd) return 'cardio';
   return 'other';
 }
-function setsSummary(sets) {
-  return sets.map(s => fmtW(s.w) + '×' + s.r).join(', ');
+const distUnit = () => unit() === 'kg' ? 'km' : 'mi';
+const isCardio = (ex) => ex.group === 'Cardio';
+function fmtSetShort(s) {
+  if (s.min != null) return s.min + 'min' + (s.dist ? ' ' + fmtW(s.dist) + distUnit() : '');
+  return fmtW(s.w) + '×' + s.r;
 }
+function setsSummary(sets) {
+  return sets.map(fmtSetShort).join(', ');
+}
+function setVol(s) { return (s.w || 0) * (s.r || 0); }
 
 /* ================= backup nudge ================= */
 function nudgeInfo() {
@@ -623,13 +650,15 @@ function render() {
 
 function pendingFor(ex) {
   if (!ui.pending[ex.id]) {
-    let w = ex.equip === 'Bodyweight' ? 0 : (unit() === 'kg' ? 20 : 45), r = 8;
-    if (ex.sets.length) { const l = ex.sets[ex.sets.length - 1]; w = l.w; r = l.r; }
-    else {
-      const lt = lastTime(ex.name, ex.equip);
-      if (lt) { const l = lt.sets[lt.sets.length - 1]; w = l.w; r = l.r; }
+    const last = ex.sets.length ? ex.sets[ex.sets.length - 1]
+      : (lastTime(ex.name, ex.equip) || { sets: [] }).sets.slice(-1)[0];
+    if (isCardio(ex)) {
+      ui.pending[ex.id] = { min: last && last.min != null ? last.min : 30, dist: last && last.dist ? last.dist : 0 };
+    } else if (last && last.w != null) {
+      ui.pending[ex.id] = { w: last.w, r: last.r };
+    } else {
+      ui.pending[ex.id] = { w: ex.equip === 'Bodyweight' ? 0 : (unit() === 'kg' ? 20 : 45), r: 8 };
     }
-    ui.pending[ex.id] = { w, r };
   }
   return ui.pending[ex.id];
 }
@@ -657,11 +686,11 @@ function renderLog() {
   /* completed session -> confirmation card */
   if (s && s.done && s.exercises.length) {
     const nSets = s.exercises.reduce((a, e) => a + e.sets.length, 0);
-    const vol = s.exercises.reduce((a, e) => a + e.sets.reduce((b, x) => b + x.w * x.r, 0), 0);
+    const vol = s.exercises.reduce((a, e) => a + e.sets.reduce((b, x) => b + setVol(x), 0), 0);
     h += '<div class="donecard"><div class="big">✓ Workout complete</div>'
       + '<div class="stats">' + s.exercises.length + ' exercise' + (s.exercises.length === 1 ? '' : 's') + ' · ' + nSets + ' sets · ' + Math.round(vol).toLocaleString() + ' ' + unit() + ' volume</div>'
       + '<div class="exlist">'
-      + s.exercises.map(e => '<div class="hex"><div class="hexname">' + esc(e.name) + equipTag(e) + '</div><div class="hexsets">' + e.sets.map(x => (x.pr ? '<span class="pr">' : '') + fmtW(x.w) + '×' + x.r + (x.pr ? ' PR</span>' : '')).join(', ') + '</div></div>').join('')
+      + s.exercises.map(e => '<div class="hex"><div class="hexname">' + esc(e.name) + equipTag(e) + '</div><div class="hexsets">' + e.sets.map(x => (x.pr ? '<span class="pr">' : '') + fmtSetShort(x) + (x.pr ? ' PR</span>' : '')).join(', ') + '</div></div>').join('')
       + '</div>'
       + (s.note ? '<div class="hexnote" style="text-align:left;padding-bottom:8px">' + esc(s.note) + '</div>' : '')
       + '<button class="reopen" data-act="reopen">Edit workout</button></div>';
@@ -718,7 +747,7 @@ function renderAddForm() {
         + CATALOG[ui.addGroup].map(e => '<option' + (ui.addExName === e[0] ? ' selected' : '') + '>' + esc(e[0]) + '</option>').join('')
         + '</select>';
     }
-    if (ui.addExName) {
+    if (ui.addExName && allowedEquip(ui.addExName).length) {
       h += '<div class="flabel">Equipment</div><div class="chips">'
         + allowedEquip(ui.addExName).map(q => '<button class="chip' + (ui.addEquip === q ? ' on' : '') + '" data-act="equip" data-e="' + esc(q) + '">' + esc(q) + '</button>').join('')
         + '</div>';
@@ -731,9 +760,20 @@ function renderAddForm() {
 }
 
 function renderExercise(ex) {
+  /* finished exercise -> compact summary card */
+  if (ex.done) {
+    return '<div class="excard isdone">'
+      + '<div class="exhead"><div class="exname">' + esc(ex.name) + equipTag(ex) + '</div><span class="donechk">✓</span></div>'
+      + '<div class="donesum">' + esc(setsSummary(ex.sets)) + '</div>'
+      + (ex.notes ? '<div class="lasttime">' + esc(ex.notes) + '</div>' : '')
+      + '<button class="editlink" data-act="reopen-ex" data-id="' + ex.id + '">Edit</button>'
+      + '</div>';
+  }
+
   const p = pendingFor(ex);
   const lt = lastTime(ex.name, ex.equip);
   const armed = ui.armed === 'ex-' + ex.id;
+  const cardio = isCardio(ex);
   let h = '<div class="excard">'
     + '<div class="exhead"><div class="exname">' + esc(ex.name) + equipTag(ex) + '</div>'
     + '<button class="exdrop' + (armed ? ' arm' : '') + '" data-act="del-ex" data-id="' + ex.id + '">' + (armed ? 'Remove?' : 'remove') + '</button></div>';
@@ -742,26 +782,45 @@ function renderExercise(ex) {
   if (ex.sets.length) {
     h += '<div class="setrows">' + ex.sets.map((s, i) =>
       '<div class="setrow"><span class="setno num">' + (i + 1) + '</span>'
-      + '<span class="setval">' + fmtW(s.w) + ' ' + unit() + '<span class="x">×</span>' + s.r + '</span>'
+      + '<span class="setval">' + (s.min != null
+          ? s.min + ' min' + (s.dist ? '<span class="x">·</span>' + fmtW(s.dist) + ' ' + distUnit() : '')
+          : fmtW(s.w) + ' ' + unit() + '<span class="x">×</span>' + s.r)
+      + '</span>'
       + (s.pr ? '<span class="prchip">PR</span>' : '')
       + '<button class="setdel" data-act="del-set" data-id="' + ex.id + '" data-i="' + i + '" aria-label="Delete set">×</button></div>'
     ).join('') + '</div>';
   }
 
-  h += '<div class="logbar">'
-    + '<div class="step"><button data-act="w-" data-id="' + ex.id + '" aria-label="Decrease weight">−</button>'
-    + '<div class="stepmid"><input inputmode="decimal" data-winput="' + ex.id + '" value="' + fmtW(p.w) + '" aria-label="Weight"><span class="steplbl">' + unit() + '</span></div>'
-    + '<button data-act="w+" data-id="' + ex.id + '" aria-label="Increase weight">+</button></div>'
-    + '<div class="step"><button data-act="r-" data-id="' + ex.id + '" aria-label="Decrease reps">−</button>'
-    + '<div class="stepmid"><input inputmode="numeric" data-rinput="' + ex.id + '" value="' + p.r + '" aria-label="Reps"><span class="steplbl">reps</span></div>'
-    + '<button data-act="r+" data-id="' + ex.id + '" aria-label="Increase reps">+</button></div>'
-    + '</div>'
-    + '<button class="logset" data-act="log-set" data-id="' + ex.id + '">Log set ' + (ex.sets.length + 1) + '</button>';
+  if (cardio) {
+    h += '<div class="logbar">'
+      + '<div class="step"><button data-act="m-" data-id="' + ex.id + '" aria-label="Decrease minutes">−</button>'
+      + '<div class="stepmid"><input inputmode="numeric" data-mininput="' + ex.id + '" value="' + p.min + '" aria-label="Minutes"><span class="steplbl">min</span></div>'
+      + '<button data-act="m+" data-id="' + ex.id + '" aria-label="Increase minutes">+</button></div>'
+      + '<div class="step"><button data-act="d-" data-id="' + ex.id + '" aria-label="Decrease distance">−</button>'
+      + '<div class="stepmid"><input inputmode="decimal" data-distinput="' + ex.id + '" value="' + fmtW(p.dist) + '" aria-label="Distance"><span class="steplbl">' + distUnit() + ' · optional</span></div>'
+      + '<button data-act="d+" data-id="' + ex.id + '" aria-label="Increase distance">+</button></div>'
+      + '</div>';
+  } else {
+    h += '<div class="logbar">'
+      + '<div class="step"><button data-act="w-" data-id="' + ex.id + '" aria-label="Decrease weight">−</button>'
+      + '<div class="stepmid"><input inputmode="decimal" data-winput="' + ex.id + '" value="' + fmtW(p.w) + '" aria-label="Weight"><span class="steplbl">' + unit() + '</span></div>'
+      + '<button data-act="w+" data-id="' + ex.id + '" aria-label="Increase weight">+</button></div>'
+      + '<div class="step"><button data-act="r-" data-id="' + ex.id + '" aria-label="Decrease reps">−</button>'
+      + '<div class="stepmid"><input inputmode="numeric" data-rinput="' + ex.id + '" value="' + p.r + '" aria-label="Reps"><span class="steplbl">reps</span></div>'
+      + '<button data-act="r+" data-id="' + ex.id + '" aria-label="Increase reps">+</button></div>'
+      + '</div>';
+  }
+  h += '<button class="logset" data-act="log-set" data-id="' + ex.id + '">Log set ' + (ex.sets.length + 1) + '</button>';
 
   if (ui.notesOpen[ex.id] || ex.notes) {
     h += '<div class="notewrap"><textarea class="note" data-note="' + ex.id + '" placeholder="Notes — form cues, how it felt…">' + esc(ex.notes || '') + '</textarea></div>';
+    h += '<div class="exfoot"><span></span>'
+      + (ex.sets.length ? '<button class="exdone" data-act="done-ex" data-id="' + ex.id + '">✓ Done with exercise</button>' : '')
+      + '</div>';
   } else {
-    h += '<div class="notewrap"><button class="notebtn" data-act="open-note" data-id="' + ex.id + '">+ note</button></div>';
+    h += '<div class="exfoot"><button class="notebtn" data-act="open-note" data-id="' + ex.id + '">+ note</button>'
+      + (ex.sets.length ? '<button class="exdone" data-act="done-ex" data-id="' + ex.id + '">✓ Done with exercise</button>' : '')
+      + '</div>';
   }
   return h + '</div>';
 }
@@ -814,7 +873,7 @@ function calDetail(ds) {
   if (w && w.exercises.length) {
     h += w.exercises.map(e =>
       '<div class="hex"><div class="hexname">' + esc(e.name) + equipTag(e) + '</div>'
-      + '<div class="hexsets">' + e.sets.map(s => (s.pr ? '<span class="pr">' : '') + fmtW(s.w) + '×' + s.r + (s.pr ? ' PR</span>' : '')).join(', ') + '</div>'
+      + '<div class="hexsets">' + e.sets.map(s => (s.pr ? '<span class="pr">' : '') + fmtSetShort(s) + (s.pr ? ' PR</span>' : '')).join(', ') + '</div>'
       + (e.notes ? '<div class="hexnote">' + esc(e.notes) + '</div>' : '')
       + '</div>').join('');
     if (w.note) h += '<div class="hexnote" style="padding-top:8px">' + esc(w.note) + '</div>';
@@ -837,7 +896,7 @@ function renderHistory() {
   h += ws.map((w, i) => {
     const nEx = w.exercises.length;
     const nSets = w.exercises.reduce((a, e) => a + e.sets.length, 0);
-    const vol = w.exercises.reduce((a, e) => a + e.sets.reduce((b, s) => b + s.w * s.r, 0), 0);
+    const vol = w.exercises.reduce((a, e) => a + e.sets.reduce((b, s) => b + setVol(s), 0), 0);
     const armed = ui.armed === 'w-' + w.id;
     return '<details class="hcard"' + (i === 0 ? ' open' : '') + '><summary>'
       + (w.exercises.length ? '<span class="typedot t-' + workoutType(w) + '" style="align-self:center"></span>' : '')
@@ -847,7 +906,7 @@ function renderHistory() {
       + (db.bodyweight[w.date] != null ? '<div class="hexnote" style="padding:8px 0 0">Body weight ' + fmtW(db.bodyweight[w.date]) + ' ' + unit() + '</div>' : '')
       + w.exercises.map(e =>
           '<div class="hex"><div class="hexname">' + esc(e.name) + equipTag(e) + '</div>'
-          + '<div class="hexsets">' + e.sets.map(s => (s.pr ? '<span class="pr">' : '') + fmtW(s.w) + '×' + s.r + (s.pr ? ' PR</span>' : '')).join(', ') + '</div>'
+          + '<div class="hexsets">' + e.sets.map(s => (s.pr ? '<span class="pr">' : '') + fmtSetShort(s) + (s.pr ? ' PR</span>' : '')).join(', ') + '</div>'
           + (e.notes ? '<div class="hexnote">' + esc(e.notes) + '</div>' : '')
           + '</div>').join('')
       + (w.note ? '<div class="hexnote" style="padding:8px 0 0">' + esc(w.note) + '</div>' : '')
@@ -991,15 +1050,33 @@ const actions = {
   'w-': (el) => { const p = ui.pending[el.dataset.id]; p.w = Math.max(0, Math.round((p.w - wStep()) * 100) / 100); render(); },
   'r+': (el) => { const p = ui.pending[el.dataset.id]; p.r = Math.min(999, p.r + 1); render(); },
   'r-': (el) => { const p = ui.pending[el.dataset.id]; p.r = Math.max(1, p.r - 1); render(); },
+  'm+': (el) => { const p = ui.pending[el.dataset.id]; p.min = Math.min(999, p.min + 5); render(); },
+  'm-': (el) => { const p = ui.pending[el.dataset.id]; p.min = Math.max(1, p.min - 5); render(); },
+  'd+': (el) => { const p = ui.pending[el.dataset.id]; p.dist = Math.round(Math.min(999, p.dist + 0.5) * 100) / 100; render(); },
+  'd-': (el) => { const p = ui.pending[el.dataset.id]; p.dist = Math.round(Math.max(0, p.dist - 0.5) * 100) / 100; render(); },
   'log-set': (el) => {
     const s = getSession(); if (!s) return;
     const ex = s.exercises.find(e => e.id === el.dataset.id); if (!ex) return;
     const p = pendingFor(ex);
-    const prev = maxWeight(ex.name, ex.equip);
-    const set = { w: p.w, r: p.r };
-    if (prev > 0 && p.w > prev) set.pr = true;
-    ex.sets.push(set);
+    if (isCardio(ex)) {
+      ex.sets.push({ min: p.min, dist: p.dist || 0 });
+    } else {
+      const prev = maxWeight(ex.name, ex.equip);
+      const set = { w: p.w, r: p.r };
+      if (prev > 0 && p.w > prev) set.pr = true;
+      ex.sets.push(set);
+    }
     save(); render();
+  },
+  'done-ex': (el) => {
+    const s = getSession(); if (!s) return;
+    const ex = s.exercises.find(e => e.id === el.dataset.id);
+    if (ex && ex.sets.length) { ex.done = true; save(); render(); }
+  },
+  'reopen-ex': (el) => {
+    const s = getSession(); if (!s) return;
+    const ex = s.exercises.find(e => e.id === el.dataset.id);
+    if (ex) { ex.done = false; save(); render(); }
   },
   'del-set': (el) => {
     const s = getSession(); if (!s) return;
@@ -1066,6 +1143,16 @@ document.addEventListener('change', (e) => {
     const v = parseInt(t.value, 10);
     p.r = isFinite(v) && v >= 1 ? Math.min(999, v) : p.r;
     t.value = p.r;
+  } else if (t.dataset.mininput) {
+    const p = ui.pending[t.dataset.mininput];
+    const v = parseInt(t.value, 10);
+    p.min = isFinite(v) && v >= 1 ? Math.min(999, v) : p.min;
+    t.value = p.min;
+  } else if (t.dataset.distinput) {
+    const p = ui.pending[t.dataset.distinput];
+    const v = parseFloat(String(t.value).replace(',', '.'));
+    p.dist = isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : p.dist;
+    t.value = fmtW(p.dist);
   } else if (t.id === 'exSelect') {
     ui.addExName = t.value || null;
     ui.addEquip = ui.addExName ? allowedEquip(ui.addExName)[0] : null;
