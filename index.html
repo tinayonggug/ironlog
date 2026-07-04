@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#15171B">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -43,7 +43,10 @@
     font-size: 16px;
     line-height: 1.45;
     min-height: 100dvh;
+    touch-action: manipulation; /* no double-tap zoom */
+    -webkit-user-select: none; user-select: none;
   }
+  input, textarea { -webkit-user-select: text; user-select: text; }
   #app { max-width: 440px; margin: 0 auto; min-height: 100dvh; }
   @media (min-width: 500px) {
     body { background: #101216; }
@@ -139,6 +142,23 @@
   }
   .steplbl { font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
 
+  .banddot {
+    display: inline-block; width: 12px; height: 12px; border-radius: 50%;
+    border: 1px solid var(--line); margin-right: 7px; vertical-align: -1px;
+  }
+  .bandval { font-family: var(--disp); font-weight: 700; font-size: 21px; text-transform: uppercase; letter-spacing: .03em; }
+  .dualrow { display: flex; gap: 8px; margin-top: 12px; }
+  .dualrow .chip { flex: 1; text-align: center; }
+  .barrow {
+    display: flex; align-items: center; gap: 7px; margin-top: 10px;
+    color: var(--faint); font-size: 13px;
+  }
+  .barrow input {
+    width: 58px; background: var(--ink2); border: 1px solid var(--line); border-radius: 7px;
+    padding: 6px 8px; font-size: 16px; text-align: center; font-variant-numeric: tabular-nums;
+  }
+  .barrow .plates { margin-left: auto; font-variant-numeric: tabular-nums; }
+  .barrow .plates b { color: var(--dim); font-weight: 600; }
   .logset {
     width: 100%; margin-top: 10px; min-height: 50px;
     background: var(--blue); color: #0D1420; font-weight: 700; font-size: 16px;
@@ -157,7 +177,7 @@
   .notebtn { color: var(--faint); font-size: 13px; padding: 6px 2px; min-height: 36px; }
   textarea.note {
     width: 100%; background: var(--ink2); border: 1px solid var(--line); border-radius: 8px;
-    padding: 10px 12px; font-size: 15px; resize: vertical; min-height: 64px;
+    padding: 10px 12px; font-size: 16px; resize: vertical; min-height: 64px;
   }
   textarea.note::placeholder, input::placeholder { color: var(--faint); }
 
@@ -268,7 +288,7 @@
   .setupno { color: var(--faint); font-size: 14px; padding: 8px 10px; min-height: 40px; }
   .pinput {
     background: var(--ink2); border: 1px solid var(--line); border-radius: 8px;
-    padding: 9px 12px; font-size: 15px; color: var(--chalk);
+    padding: 9px 12px; font-size: 16px; color: var(--chalk);
   }
   input[type=date].pinput { color-scheme: dark; font-family: var(--ui); }
 
@@ -587,7 +607,10 @@ function maxWeight(name, equip) {
     if (w.date > LD()) continue; /* backfilled days only count history up to that day */
     for (const ex of w.exercises)
       if (exKey(ex.name, ex.equip) === key)
-        for (const s of ex.sets) if (s.w > m) m = s.w;
+        for (const s of ex.sets) {
+          const eff = (s.w || 0) * (s.dual ? 2 : 1);
+          if (eff > m) m = eff;
+        }
   }
   return m;
 }
@@ -678,14 +701,20 @@ function workoutType(w) {
 }
 const distUnit = () => unit() === 'kg' ? 'km' : 'mi';
 const isCardio = (ex) => ex.group === 'Cardio';
+const isBand = (ex) => ex.equip === 'Band';
+const BANDS = [['Yellow', '#E3C13F'], ['Red', '#D6604C'], ['Green', '#7BAE7F'], ['Blue', '#5B8FD4'], ['Black', '#3A4048']];
+const bandColor = (name) => { const b = BANDS.find(x => x[0] === name); return b ? b[1] : '#888'; };
+const barDefault = () => unit() === 'kg' ? 20 : 45;
+const barWeight = () => db.settings.barWeight != null ? db.settings.barWeight : barDefault();
 function fmtSetShort(s) {
   if (s.min != null) return s.min + 'min' + (s.dist ? ' ' + fmtW(s.dist) + distUnit() : '');
-  return fmtW(s.w) + '×' + s.r;
+  if (s.band) return s.band + '×' + s.r;
+  return (s.dual ? '2×' : '') + fmtW(s.w) + '×' + s.r;
 }
 function setsSummary(sets) {
   return sets.map(fmtSetShort).join(', ');
 }
-function setVol(s) { return (s.w || 0) * (s.r || 0); }
+function setVol(s) { return (s.w || 0) * (s.dual ? 2 : 1) * (s.r || 0); }
 
 /* ================= backup nudge ================= */
 function nudgeInfo() {
@@ -722,10 +751,12 @@ function pendingFor(ex) {
     const last = ex.sets.length ? ex.sets[ex.sets.length - 1] : (lt ? lt.sets[0] : null);
     if (isCardio(ex)) {
       ui.pending[ex.id] = { min: last && last.min != null ? last.min : 30, dist: last && last.dist ? last.dist : 0 };
+    } else if (isBand(ex)) {
+      ui.pending[ex.id] = { band: last && last.band ? last.band : 'Red', r: last && last.r ? last.r : 12 };
     } else if (last && last.w != null) {
-      ui.pending[ex.id] = { w: last.w, r: last.r };
+      ui.pending[ex.id] = { w: last.w, r: last.r, dual: !!last.dual };
     } else {
-      ui.pending[ex.id] = { w: ex.equip === 'Bodyweight' ? 0 : (unit() === 'kg' ? 20 : 45), r: 8 };
+      ui.pending[ex.id] = { w: ex.equip === 'Bodyweight' ? 0 : (unit() === 'kg' ? 20 : 45), r: 8, dual: false };
     }
   }
   return ui.pending[ex.id];
@@ -866,13 +897,19 @@ function renderExercise(ex) {
       '<div class="setrow"><span class="setno num">' + (i + 1) + '</span>'
       + '<span class="setval">' + (s.min != null
           ? s.min + ' min' + (s.dist ? '<span class="x">·</span>' + fmtW(s.dist) + ' ' + distUnit() : '')
-          : fmtW(s.w) + ' ' + unit() + '<span class="x">×</span>' + s.r)
+          : s.band
+          ? '<span class="banddot" style="background:' + bandColor(s.band) + '"></span>' + esc(s.band) + '<span class="x">×</span>' + s.r
+          : (s.dual ? '2×' : '') + fmtW(s.w) + ' ' + unit() + '<span class="x">×</span>' + s.r)
       + '</span>'
       + (s.pr ? '<span class="prchip">PR</span>' : '')
       + '<button class="setdel' + (ui.armed === 'set-' + ex.id + '-' + i ? ' arm' : '') + '" data-act="del-set" data-id="' + ex.id + '" data-i="' + i + '" aria-label="Delete set">'
       + (ui.armed === 'set-' + ex.id + '-' + i ? 'Delete?' : '×') + '</button></div>'
     ).join('') + '</div>';
   }
+
+  const repsStep = '<div class="step"><button data-act="r-" data-id="' + ex.id + '" aria-label="Decrease reps">−</button>'
+    + '<div class="stepmid"><input inputmode="numeric" data-rinput="' + ex.id + '" value="' + p.r + '" aria-label="Reps"><span class="steplbl">reps</span></div>'
+    + '<button data-act="r+" data-id="' + ex.id + '" aria-label="Increase reps">+</button></div>';
 
   if (cardio) {
     h += '<div class="logbar">'
@@ -883,15 +920,29 @@ function renderExercise(ex) {
       + '<div class="stepmid"><input inputmode="decimal" data-distinput="' + ex.id + '" value="' + fmtW(p.dist) + '" aria-label="Distance"><span class="steplbl">' + distUnit() + ' · optional</span></div>'
       + '<button data-act="d+" data-id="' + ex.id + '" aria-label="Increase distance">+</button></div>'
       + '</div>';
+  } else if (isBand(ex)) {
+    h += '<div class="logbar">'
+      + '<div class="step"><button data-act="b-" data-id="' + ex.id + '" aria-label="Lighter band">−</button>'
+      + '<div class="stepmid"><div class="bandval"><span class="banddot" style="background:' + bandColor(p.band) + '"></span>' + esc(p.band) + '</div><span class="steplbl">band</span></div>'
+      + '<button data-act="b+" data-id="' + ex.id + '" aria-label="Heavier band">+</button></div>'
+      + repsStep + '</div>';
   } else {
+    if (ex.equip === 'Cable') {
+      h += '<div class="dualrow">'
+        + '<button class="chip' + (!p.dual ? ' on' : '') + '" data-act="dual" data-id="' + ex.id + '" data-v="0">One stack</button>'
+        + '<button class="chip' + (p.dual ? ' on' : '') + '" data-act="dual" data-id="' + ex.id + '" data-v="1">Both stacks ×2</button>'
+        + '</div>';
+    }
     h += '<div class="logbar">'
       + '<div class="step"><button data-act="w-" data-id="' + ex.id + '" aria-label="Decrease weight">−</button>'
-      + '<div class="stepmid"><input inputmode="decimal" data-winput="' + ex.id + '" value="' + fmtW(p.w) + '" aria-label="Weight"><span class="steplbl">' + unit() + '</span></div>'
+      + '<div class="stepmid"><input inputmode="decimal" data-winput="' + ex.id + '" value="' + fmtW(p.w) + '" aria-label="Weight"><span class="steplbl">' + (ex.equip === 'Cable' && p.dual ? unit() + ' / stack' : unit()) + '</span></div>'
       + '<button data-act="w+" data-id="' + ex.id + '" aria-label="Increase weight">+</button></div>'
-      + '<div class="step"><button data-act="r-" data-id="' + ex.id + '" aria-label="Decrease reps">−</button>'
-      + '<div class="stepmid"><input inputmode="numeric" data-rinput="' + ex.id + '" value="' + p.r + '" aria-label="Reps"><span class="steplbl">reps</span></div>'
-      + '<button data-act="r+" data-id="' + ex.id + '" aria-label="Increase reps">+</button></div>'
-      + '</div>';
+      + repsStep + '</div>';
+    if (ex.equip === 'Barbell') {
+      const perSide = (p.w - barWeight()) / 2;
+      h += '<div class="barrow"><span>Bar</span><input inputmode="decimal" data-barinput value="' + fmtW(barWeight()) + '" aria-label="Bar weight"><span>' + unit() + '</span>'
+        + '<span class="plates">' + (perSide >= 0 ? '→ <b>' + fmtW(Math.round(perSide * 100) / 100) + '</b> / side' : '→ below bar weight') + '</span></div>';
+    }
   }
   h += '<button class="logset" data-act="log-set" data-id="' + ex.id + '">Log set ' + (ex.sets.length + 1) + '</button>';
 
@@ -1031,7 +1082,7 @@ function renderData() {
     + '<div class="drow"><span class="lbl">Sex</span><div class="seg">'
     + '<button data-act="sex" data-s="m" class="' + (p.sex === 'm' ? 'on' : '') + '">Male</button>'
     + '<button data-act="sex" data-s="f" class="' + (p.sex === 'f' ? 'on' : '') + '">Female</button></div></div>'
-    + '<div class="drow"><span class="lbl">Activity</span><select class="exsel" id="actSelect" style="width:auto;padding:9px 12px;font-size:14px">'
+    + '<div class="drow"><span class="lbl">Activity</span><select class="exsel" id="actSelect" style="width:auto;padding:9px 12px;font-size:16px">'
     + ACTIVITY.map(a => '<option value="' + a[0] + '"' + ((p.activity || 1.55) === a[0] ? ' selected' : '') + '>' + a[1] + ' · ' + a[2] + '</option>').join('')
     + '</select></div>'
     + '<div class="flabel">Goal</div><div class="chips">'
@@ -1165,16 +1216,23 @@ const actions = {
   'm-': (el) => { const p = ui.pending[el.dataset.id]; p.min = Math.max(1, p.min - 5); render(); },
   'd+': (el) => { const p = ui.pending[el.dataset.id]; p.dist = Math.round(Math.min(999, p.dist + 0.5) * 100) / 100; render(); },
   'd-': (el) => { const p = ui.pending[el.dataset.id]; p.dist = Math.round(Math.max(0, p.dist - 0.5) * 100) / 100; render(); },
+  'b+': (el) => { const p = ui.pending[el.dataset.id]; const i = BANDS.findIndex(b => b[0] === p.band); p.band = BANDS[Math.min(BANDS.length - 1, i + 1)][0]; render(); },
+  'b-': (el) => { const p = ui.pending[el.dataset.id]; const i = BANDS.findIndex(b => b[0] === p.band); p.band = BANDS[Math.max(0, i - 1)][0]; render(); },
+  'dual': (el) => { const p = ui.pending[el.dataset.id]; p.dual = el.dataset.v === '1'; render(); },
   'log-set': (el) => {
     const s = getSession(); if (!s) return;
     const ex = s.exercises.find(e => e.id === el.dataset.id); if (!ex) return;
     const p = pendingFor(ex);
     if (isCardio(ex)) {
       ex.sets.push({ min: p.min, dist: p.dist || 0 });
+    } else if (isBand(ex)) {
+      ex.sets.push({ band: p.band, r: p.r });
     } else {
       const prev = maxWeight(ex.name, ex.equip);
       const set = { w: p.w, r: p.r };
-      if (prev > 0 && p.w > prev) set.pr = true;
+      if (p.dual) set.dual = true;
+      const eff = p.w * (p.dual ? 2 : 1);
+      if (prev > 0 && eff > prev) set.pr = true;
       ex.sets.push(set);
     }
     save(); render();
@@ -1279,6 +1337,10 @@ document.addEventListener('change', (e) => {
     const v = parseFloat(String(t.value).replace(',', '.'));
     if (t.value.trim() === '') delete db.bodyweight[LD()];
     else if (isFinite(v) && v > 0 && v < 1000) db.bodyweight[LD()] = Math.round(v * 10) / 10;
+    save(); render();
+  } else if (t.dataset.barinput != null) {
+    const v = parseFloat(String(t.value).replace(',', '.'));
+    if (isFinite(v) && v >= 0 && v < 100) db.settings.barWeight = Math.round(v * 100) / 100;
     save(); render();
   } else if (t.id === 'dobInput') {
     db.profile.dob = t.value || null;
