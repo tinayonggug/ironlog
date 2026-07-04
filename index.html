@@ -1075,7 +1075,7 @@ function renderData() {
   const ti = tdeeInfo();
   h += '<div class="dsec"><h2>Profile &amp; calories</h2>'
     + '<div class="drow"><span class="lbl">Date of birth</span><span>'
-    + (p.dob ? '<span class="val num" style="color:var(--dim);margin-right:8px">' + ageFromDob(p.dob) + 'y</span>' : '')
+    + '<span class="val num" id="dobAge" style="color:var(--dim);margin-right:8px">' + (p.dob ? ageFromDob(p.dob) + 'y' : '') + '</span>'
     + '<input type="date" class="pinput" id="dobInput" value="' + esc(p.dob || '') + '"></span></div>'
     + '<div class="drow"><span class="lbl">Height</span><span><input class="pinput" style="width:80px;text-align:right" inputmode="decimal" id="htInput" value="'
     + (p.heightCm ? (unit() === 'kg' ? Math.round(p.heightCm) : fmtW(Math.round(p.heightCm / 2.54 * 10) / 10)) : '') + '"> <span class="lbl">' + (unit() === 'kg' ? 'cm' : 'in') + '</span></span></div>'
@@ -1343,15 +1343,20 @@ document.addEventListener('change', (e) => {
     if (isFinite(v) && v >= 0 && v < 100) db.settings.barWeight = Math.round(v * 100) / 100;
     save(); render();
   } else if (t.id === 'dobInput') {
+    /* iOS fires change on every picker-wheel tick; re-rendering here would
+       destroy the input and dismiss the picker mid-scroll. Save silently,
+       update the age label in place, and do the full render on focusout. */
     db.profile.dob = t.value || null;
-    save(); render();
+    save();
+    const age = document.getElementById('dobAge');
+    if (age) age.textContent = db.profile.dob ? ageFromDob(db.profile.dob) + 'y' : '';
+  } else if (t.id === 'actSelect') {
+    db.profile.activity = parseFloat(t.value);
+    save(); /* no render — keep the iOS wheel open; full render on focusout */
   } else if (t.id === 'htInput') {
     const v = parseFloat(String(t.value).replace(',', '.'));
     if (t.value.trim() === '') db.profile.heightCm = null;
     else if (isFinite(v) && v > 0 && v < 300) db.profile.heightCm = Math.round((unit() === 'lb' ? v * 2.54 : v) * 10) / 10;
-    save(); render();
-  } else if (t.id === 'actSelect') {
-    db.profile.activity = parseFloat(t.value);
     save(); render();
   } else if (t.id === 'importFile') {
     const f = t.files[0];
@@ -1382,6 +1387,11 @@ document.addEventListener('input', (e) => {
     const ex = s.exercises.find(x => x.id === t.dataset.note);
     if (ex) { ex.notes = t.value; save(); }
   }
+});
+
+/* dob/activity pickers save silently on change; refresh the view once they close */
+document.addEventListener('focusout', (e) => {
+  if (e.target.id === 'dobInput' || e.target.id === 'actSelect') render();
 });
 
 /* Enter key in add-exercise input */
