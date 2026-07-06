@@ -367,6 +367,35 @@
   .donecard .exlist { text-align: left; margin: 14px 0 4px; }
   .donecard .reopen { color: var(--dim); font-size: 14px; text-decoration: underline; min-height: 44px; padding: 8px 14px; margin-top: 6px; }
 
+  /* ---------- supersets / warm-ups ---------- */
+  .sstag {
+    font-size: 10px; font-weight: 700; letter-spacing: .08em; font-family: var(--ui);
+    color: var(--yellow); border: 1px solid color-mix(in srgb, var(--yellow) 60%, transparent);
+    border-radius: 5px; padding: 2px 6px; margin-left: 8px; vertical-align: 3px;
+  }
+  .setno.wu { color: var(--yellow); }
+  .wuval { color: var(--dim); }
+
+  /* ---------- badges ---------- */
+  .badge { display: flex; align-items: center; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .badge:last-child { border-bottom: none; }
+  .bico {
+    width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px solid var(--line); color: var(--faint); font-size: 15px;
+  }
+  .btxt b { font-size: 14px; font-weight: 600; display: block; color: var(--faint); }
+  .btxt span { font-size: 12px; color: var(--faint); }
+  .badge.on .btxt b { color: var(--chalk); }
+  .badge.on .btxt span { color: var(--dim); }
+  .bchk { margin-left: auto; color: var(--green); font-weight: 700; }
+  .newbadge { color: var(--yellow); font-size: 14px; font-weight: 600; margin-top: 6px; }
+
+  /* ---------- trends ---------- */
+  .trendsel { width: 100%; margin-bottom: 12px; }
+  .tdelta { color: var(--dim); font-size: 13px; margin-top: 8px; font-variant-numeric: tabular-nums; }
+  .tdelta b { color: var(--chalk); font-weight: 600; }
+
   /* ---------- tabs ---------- */
   nav.tabs {
     position: fixed; bottom: 0; left: 50%; transform: translateX(-50%);
@@ -408,6 +437,10 @@
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="6" width="16" height="14" rx="2"/><path d="M4 11h16M8 3v5M16 3v5"/></svg>
       CALENDAR
     </button>
+    <button data-tab="trends" aria-label="Trends">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19l5-6 4 3 7-9"/><circle cx="20" cy="7" r="1.5"/></svg>
+      TRENDS
+    </button>
     <button data-tab="history" aria-label="History">
       <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 3"/></svg>
       HISTORY
@@ -443,6 +476,7 @@ let ui = {
   calY: null, calM: null, // calendar month in view
   calSel: null,           // selected calendar date
   logDate: null,          // date the Log tab edits; null = today
+  trendEx: null,          // exercise key shown in the trends chart
 };
 const LD = () => ui.logDate || todayStr();
 
@@ -558,8 +592,8 @@ function allowedEquip(name) {
       if (e[0] === name) return e[1];
   return ALL_EQUIP;
 }
-function exKey(name, equip) {
-  return (name || '').trim().toLowerCase() + '|' + (equip || '').toLowerCase();
+function exKey(name, equip, wedge) {
+  return (name || '').trim().toLowerCase() + '|' + (equip || '').toLowerCase() + (wedge ? '|wdg' : '');
 }
 
 /* ================= helpers ================= */
@@ -587,27 +621,28 @@ function ensureSession() {
   return s;
 }
 
-/* Most recent performance of an exercise+equipment before the day being logged */
-function lastTime(name, equip) {
-  const key = exKey(name, equip);
+/* Most recent performance of an exercise variant before the day being logged */
+function lastTime(name, equip, wedge) {
+  const key = exKey(name, equip, wedge);
   for (const w of sortedWorkouts()) {
     if (w.date >= LD()) continue;
     for (const ex of w.exercises) {
-      if (exKey(ex.name, ex.equip) === key && ex.sets.length) {
+      if (exKey(ex.name, ex.equip, ex.wedge) === key && ex.sets.length) {
         return { date: w.date, sets: ex.sets };
       }
     }
   }
   return null;
 }
-function maxWeight(name, equip) {
-  const key = exKey(name, equip);
+function maxWeight(name, equip, wedge) {
+  const key = exKey(name, equip, wedge);
   let m = 0;
   for (const w of db.workouts) {
     if (w.date > LD()) continue; /* backfilled days only count history up to that day */
     for (const ex of w.exercises)
-      if (exKey(ex.name, ex.equip) === key)
+      if (exKey(ex.name, ex.equip, ex.wedge) === key)
         for (const s of ex.sets) {
+          if (s.wu) continue; /* warm-ups never count toward PRs */
           const eff = (s.w || 0) * (s.dual ? 2 : 1);
           if (eff > m) m = eff;
         }
@@ -618,9 +653,9 @@ function knownExercises() {
   const seen = new Map();
   for (const w of sortedWorkouts())
     for (const ex of w.exercises) {
-      const key = exKey(ex.name, ex.equip);
+      const key = exKey(ex.name, ex.equip, ex.wedge);
       if (ex.name.trim() && !seen.has(key))
-        seen.set(key, { name: ex.name.trim(), equip: ex.equip || null, group: ex.group || null });
+        seen.set(key, { name: ex.name.trim(), equip: ex.equip || null, group: ex.group || null, wedge: !!ex.wedge });
     }
   return [...seen.values()];
 }
@@ -631,7 +666,9 @@ function lastBodyweight() {
   return { date: d, v: db.bodyweight[d] };
 }
 function equipTag(ex) {
-  return ex.equip ? '<span class="equiptag">' + esc(EQ_SHORT[ex.equip] || ex.equip) + '</span>' : '';
+  return (ex.equip ? '<span class="equiptag">' + esc(EQ_SHORT[ex.equip] || ex.equip) + '</span>' : '')
+    + (ex.wedge ? '<span class="equiptag">WEDGE</span>' : '')
+    + (ex.ss ? '<span class="sstag">SS</span>' : '');
 }
 
 /* ================= TDEE ================= */
@@ -675,6 +712,87 @@ function goalLabel(g) {
   return f[1] + (g ? ' ' + (g > 0 ? '+' : '−') + Math.abs(g) : '');
 }
 
+/* ================= achievements ================= */
+const BADGES = [
+  ['first', 'First Session', 'Log your first workout', s => s.totalW >= 1, '▲'],
+  ['ten', 'Ten Sessions', 'Log 10 workouts', s => s.totalW >= 10, '●'],
+  ['fifty', 'Fifty Strong', 'Log 50 workouts', s => s.totalW >= 50, '◆'],
+  ['hundred', 'Century Club', 'Log 100 workouts', s => s.totalW >= 100, '★'],
+  ['pr5', 'PR Hunter', 'Set 5 personal records', s => s.prCount >= 5, '↑'],
+  ['pr25', 'PR Machine', 'Set 25 personal records', s => s.prCount >= 25, '⇈'],
+  ['heavy', 'Heavy Day', '10,000 volume in one session', s => s.maxVol >= 10000, '▮'],
+  ['week3', 'On a Roll', '3 workouts within 7 days', s => s.bestWeek >= 3, '✦'],
+  ['week5', 'Relentless', '5 workouts within 7 days', s => s.bestWeek >= 5, '✷'],
+  ['month12', 'Iron Month', '12 workouts in one month', s => s.bestMonth >= 12, '▣'],
+  ['allround', 'All-Rounder', 'Log upper, lower, full body and cardio days', s => s.types >= 4, '✚'],
+  ['scale14', 'Scale Friend', 'Log body weight 14 times', s => s.bwCount >= 14, '◒'],
+];
+function badgeStats(excludeDate) {
+  const ws = db.workouts.filter(w => w.exercises.length && w.date !== excludeDate);
+  let prCount = 0, maxVol = 0;
+  const types = new Set(), months = {};
+  for (const w of ws) {
+    let vol = 0;
+    for (const e of w.exercises) for (const s of e.sets) { if (s.pr) prCount++; vol += setVol(s); }
+    if (vol > maxVol) maxVol = vol;
+    types.add(workoutType(w));
+    const m = w.date.slice(0, 7);
+    months[m] = (months[m] || 0) + 1;
+  }
+  const ts = ws.map(w => dateObj(w.date).getTime()).sort((a, b) => a - b);
+  let bestWeek = 0;
+  for (let i = 0; i < ts.length; i++) {
+    let c = 0;
+    for (let j = i; j < ts.length && ts[j] - ts[i] < 7 * 864e5; j++) c++;
+    if (c > bestWeek) bestWeek = c;
+  }
+  return {
+    totalW: ws.length, prCount, maxVol, bestWeek,
+    bestMonth: Object.values(months).reduce((a, b) => Math.max(a, b), 0),
+    types: ['upper', 'lower', 'full', 'cardio'].filter(t => types.has(t)).length,
+    bwCount: Object.keys(db.bodyweight).length,
+  };
+}
+function earnedBadges(excludeDate) {
+  const st = badgeStats(excludeDate);
+  return new Set(BADGES.filter(b => b[3](st)).map(b => b[0]));
+}
+const BADGE_COLS = ['var(--blue)', 'var(--red)', 'var(--green)', 'var(--yellow)'];
+
+function confetti() {
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const c = document.createElement('canvas');
+  c.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:99';
+  c.width = innerWidth * devicePixelRatio; c.height = innerHeight * devicePixelRatio;
+  document.body.appendChild(c);
+  const ctx = c.getContext('2d');
+  ctx.scale(devicePixelRatio, devicePixelRatio);
+  const cols = ['#5B8FD4', '#D6604C', '#7BAE7F', '#D9A44A', '#EAE7E0'];
+  const ps = Array.from({ length: 90 }, (_, i) => ({
+    x: Math.random() * innerWidth, y: -30 - Math.random() * innerHeight * 0.4,
+    v: 220 + Math.random() * 260, w: 4 + Math.random() * 5, h: 7 + Math.random() * 7,
+    rot: Math.random() * 6.3, vr: (Math.random() - 0.5) * 10,
+    drift: (Math.random() - 0.5) * 80, col: cols[i % cols.length],
+  }));
+  let t0 = null;
+  function frame(t) {
+    if (t0 == null) t0 = t;
+    const dt = (t - t0) / 1000;
+    ctx.clearRect(0, 0, innerWidth, innerHeight);
+    for (const p of ps) {
+      ctx.save();
+      ctx.translate(p.x + p.drift * dt, p.y + p.v * dt);
+      ctx.rotate(p.rot + p.vr * dt);
+      ctx.globalAlpha = Math.max(0, 1 - dt / 1.7);
+      ctx.fillStyle = p.col;
+      ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h);
+      ctx.restore();
+    }
+    if (dt < 1.7) requestAnimationFrame(frame); else c.remove();
+  }
+  requestAnimationFrame(frame);
+}
+
 /* classify a workout by the body groups it hits */
 const UPPER_GROUPS = ['Chest', 'Back', 'Shoulders', 'Arms'];
 const TYPE_LABEL = { upper: 'Upper body', lower: 'Lower body', full: 'Full body', cardio: 'Cardio', other: 'Other' };
@@ -707,9 +825,10 @@ const bandColor = (name) => { const b = BANDS.find(x => x[0] === name); return b
 const barDefault = () => unit() === 'kg' ? 20 : 45;
 const barWeight = () => db.settings.barWeight != null ? db.settings.barWeight : barDefault();
 function fmtSetShort(s) {
+  const wu = s.wu ? 'W ' : '';
   if (s.min != null) return s.min + 'min' + (s.dist ? ' ' + fmtW(s.dist) + distUnit() : '');
-  if (s.band) return s.band + '×' + s.r;
-  return (s.dual ? '2×' : '') + fmtW(s.w) + '×' + s.r;
+  if (s.band) return wu + s.band + '×' + s.r;
+  return wu + (s.dual ? '2×' : '') + fmtW(s.w) + '×' + s.r;
 }
 function setsSummary(sets) {
   return sets.map(fmtSetShort).join(', ');
@@ -738,6 +857,7 @@ function render() {
   const v = document.getElementById('view');
   if (tab === 'log') v.innerHTML = renderLog();
   else if (tab === 'calendar') v.innerHTML = renderCalendar();
+  else if (tab === 'trends') v.innerHTML = renderTrends();
   else if (tab === 'history') v.innerHTML = renderHistory();
   else v.innerHTML = renderData();
   if (tab === 'data') refreshPersistStatus();
@@ -747,16 +867,18 @@ function pendingFor(ex) {
   if (!ui.pending[ex.id]) {
     /* mid-session: continue from this session's last set;
        fresh exercise: start where last session STARTED (its first set), not its top set */
-    const lt = lastTime(ex.name, ex.equip);
-    const last = ex.sets.length ? ex.sets[ex.sets.length - 1] : (lt ? lt.sets[0] : null);
+    const lt = lastTime(ex.name, ex.equip, ex.wedge);
+    /* prefill from this session's last set, else last session's first WORK set */
+    const ltFirst = lt ? (lt.sets.find(x => !x.wu) || lt.sets[0]) : null;
+    const last = ex.sets.length ? ex.sets[ex.sets.length - 1] : ltFirst;
     if (isCardio(ex)) {
       ui.pending[ex.id] = { min: last && last.min != null ? last.min : 30, dist: last && last.dist ? last.dist : 0 };
     } else if (isBand(ex)) {
-      ui.pending[ex.id] = { band: last && last.band ? last.band : 'Red', r: last && last.r ? last.r : 12 };
+      ui.pending[ex.id] = { band: last && last.band ? last.band : 'Red', r: last && last.r ? last.r : 12, wu: false };
     } else if (last && last.w != null) {
-      ui.pending[ex.id] = { w: last.w, r: last.r, dual: !!last.dual };
+      ui.pending[ex.id] = { w: last.w, r: last.r, dual: !!last.dual, wu: false };
     } else {
-      ui.pending[ex.id] = { w: ex.equip === 'Bodyweight' ? 0 : (unit() === 'kg' ? 20 : 45), r: 8, dual: false };
+      ui.pending[ex.id] = { w: ex.equip === 'Bodyweight' ? 0 : (unit() === 'kg' ? 20 : 45), r: 8, dual: false, wu: false };
     }
   }
   return ui.pending[ex.id];
@@ -800,8 +922,13 @@ function renderLog() {
   if (s && s.done && s.exercises.length) {
     const nSets = s.exercises.reduce((a, e) => a + e.sets.length, 0);
     const vol = s.exercises.reduce((a, e) => a + e.sets.reduce((b, x) => b + setVol(x), 0), 0);
+    const prsToday = s.exercises.reduce((a, e) => a + e.sets.filter(x => x.pr).length, 0);
+    const before = earnedBadges(s.date), after = earnedBadges();
+    const newB = BADGES.filter(b => after.has(b[0]) && !before.has(b[0]));
     h += '<div class="donecard"><div class="big">✓ Workout complete</div>'
       + '<div class="stats">' + s.exercises.length + ' exercise' + (s.exercises.length === 1 ? '' : 's') + ' · ' + nSets + ' sets · ' + Math.round(vol).toLocaleString() + ' ' + unit() + ' volume</div>'
+      + (prsToday ? '<div class="stats" style="color:var(--red);font-weight:600">' + prsToday + ' PR' + (prsToday > 1 ? 's' : '') + ' today</div>' : '')
+      + newB.map(b => '<div class="newbadge">' + b[4] + ' Achievement unlocked: ' + b[1] + '</div>').join('')
       + '<div class="exlist">'
       + s.exercises.map(e => '<div class="hex"><div class="hexname">' + esc(e.name) + equipTag(e) + '</div><div class="hexsets">' + e.sets.map(x => (x.pr ? '<span class="pr">' : '') + fmtSetShort(x) + (x.pr ? ' PR</span>' : '')).join(', ') + '</div></div>').join('')
       + '</div>'
@@ -848,7 +975,7 @@ function renderAddForm() {
   } else {
     if (chips.length) {
       h += '<div class="flabel">Recent</div><div class="chips">'
-        + chips.map(c => '<button class="chip" data-act="pick-ex" data-name="' + esc(c.name) + '" data-equip="' + esc(c.equip || '') + '" data-group="' + esc(c.group || '') + '">' + esc(c.name) + (c.equip ? ' · ' + esc(EQ_SHORT[c.equip] || c.equip) : '') + '</button>').join('')
+        + chips.map(c => '<button class="chip" data-act="pick-ex" data-name="' + esc(c.name) + '" data-equip="' + esc(c.equip || '') + '" data-group="' + esc(c.group || '') + '" data-wedge="' + (c.wedge ? '1' : '') + '">' + esc(c.name) + (c.equip ? ' · ' + esc(EQ_SHORT[c.equip] || c.equip) : '') + (c.wedge ? ' · WDG' : '') + '</button>').join('')
         + '</div>';
     }
     h += '<div class="flabel">Body group</div><div class="chips">'
@@ -884,18 +1011,24 @@ function renderExercise(ex) {
   }
 
   const p = pendingFor(ex);
-  const lt = lastTime(ex.name, ex.equip);
+  const lt = lastTime(ex.name, ex.equip, ex.wedge);
   const armed = ui.armed === 'ex-' + ex.id;
   const cardio = isCardio(ex);
   let h = '<div class="excard">'
-    + '<div class="exhead"><div class="exname">' + esc(ex.name) + equipTag(ex) + '</div>'
+    + '<div class="exhead"><div class="exname">' + esc(ex.name) + equipTag({ ...ex, ss: null })
+    + (ex.ss ? '<button class="sstag" data-act="unlink-ss" data-id="' + ex.id + '" title="Tap to unlink superset">SS ×</button>' : '')
+    + '</div>'
     + '<button class="exdrop' + (armed ? ' arm' : '') + '" data-act="del-ex" data-id="' + ex.id + '">' + (armed ? 'Remove?' : 'remove') + '</button></div>';
-  if (lt) h += '<div class="lasttime">Last time <b>' + esc(setsSummary(lt.sets)) + '</b> · ' + fmtShort(lt.date) + '</div>';
+  if (lt) {
+    const work = lt.sets.filter(x => !x.wu);
+    h += '<div class="lasttime">Last time <b>' + esc(setsSummary(work.length ? work : lt.sets)) + '</b> · ' + fmtShort(lt.date) + '</div>';
+  }
 
   if (ex.sets.length) {
+    let workNo = 0;
     h += '<div class="setrows">' + ex.sets.map((s, i) =>
-      '<div class="setrow"><span class="setno num">' + (i + 1) + '</span>'
-      + '<span class="setval">' + (s.min != null
+      '<div class="setrow"><span class="setno num' + (s.wu ? ' wu' : '') + '">' + (s.wu ? 'W' : ++workNo) + '</span>'
+      + '<span class="setval' + (s.wu ? ' wuval' : '') + '">' + (s.min != null
           ? s.min + ' min' + (s.dist ? '<span class="x">·</span>' + fmtW(s.dist) + ' ' + distUnit() : '')
           : s.band
           ? '<span class="banddot" style="background:' + bandColor(s.band) + '"></span>' + esc(s.band) + '<span class="x">×</span>' + s.r
@@ -910,6 +1043,12 @@ function renderExercise(ex) {
   const repsStep = '<div class="step"><button data-act="r-" data-id="' + ex.id + '" aria-label="Decrease reps">−</button>'
     + '<div class="stepmid"><input inputmode="numeric" data-rinput="' + ex.id + '" value="' + p.r + '" aria-label="Reps"><span class="steplbl">reps</span></div>'
     + '<button data-act="r+" data-id="' + ex.id + '" aria-label="Increase reps">+</button></div>';
+
+  /* per-exercise options: warm-up toggle (non-cardio) + wedge for leg work */
+  let opts = '';
+  if (!cardio) opts += '<button class="chip' + (p.wu ? ' on' : '') + '" data-act="wu" data-id="' + ex.id + '">Warm-up</button>';
+  if (ex.group === 'Legs') opts += '<button class="chip' + (ex.wedge ? ' on' : '') + '" data-act="wedge" data-id="' + ex.id + '">Wedge</button>';
+  if (opts) h += '<div class="dualrow">' + opts + '</div>';
 
   if (cardio) {
     h += '<div class="logbar">'
@@ -944,7 +1083,8 @@ function renderExercise(ex) {
         + '<span class="plates">' + (perSide >= 0 ? '→ <b>' + fmtW(Math.round(perSide * 100) / 100) + '</b> / side' : '→ below bar weight') + '</span></div>';
     }
   }
-  h += '<button class="logset" data-act="log-set" data-id="' + ex.id + '">Log set ' + (ex.sets.length + 1) + '</button>';
+  h += '<button class="logset" data-act="log-set" data-id="' + ex.id + '">'
+    + (p.wu && !cardio ? 'Log warm-up' : 'Log set ' + (ex.sets.filter(s => !s.wu).length + 1)) + '</button>';
 
   if (ui.notesOpen[ex.id] || ex.notes) {
     h += '<div class="notewrap"><textarea class="note" data-note="' + ex.id + '" placeholder="Notes — form cues, how it felt…">' + esc(ex.notes || '') + '</textarea></div>';
@@ -1047,6 +1187,142 @@ function renderHistory() {
       + '<button class="hdel' + (armed ? ' arm' : '') + '" data-act="del-w" data-id="' + w.id + '">' + (armed ? 'Delete this workout?' : 'Delete workout') + '</button>'
       + '</div></details>';
   }).join('');
+  h += renderBadges();
+  return h;
+}
+
+function renderBadges() {
+  const earned = earnedBadges();
+  return '<div class="dsec" style="margin-top:20px"><h2>Achievements · ' + earned.size + '/' + BADGES.length + '</h2>'
+    + BADGES.map((b, i) => {
+      const on = earned.has(b[0]);
+      const col = BADGE_COLS[i % BADGE_COLS.length];
+      return '<div class="badge' + (on ? ' on' : '') + '">'
+        + '<span class="bico"' + (on ? ' style="background:' + col + ';color:#0D1420;border-color:transparent"' : '') + '>' + b[4] + '</span>'
+        + '<div class="btxt"><b>' + b[1] + '</b><span>' + b[2] + '</span></div>'
+        + (on ? '<span class="bchk">✓</span>' : '')
+        + '</div>';
+    }).join('')
+    + '</div>';
+}
+
+/* ================= trends ================= */
+function weightExercises() {
+  const m = new Map();
+  for (const w of sortedWorkouts())
+    for (const e of w.exercises) {
+      if (e.group === 'Cardio' || e.equip === 'Band') continue;
+      if (!e.sets.some(s => !s.wu && s.w > 0)) continue;
+      const k = exKey(e.name, e.equip, e.wedge);
+      if (!m.has(k)) m.set(k, { key: k, name: e.name, equip: e.equip, wedge: !!e.wedge, n: 0 });
+      m.get(k).n++;
+    }
+  return [...m.values()].sort((a, b) => b.n - a.n);
+}
+function progressionPoints(key) {
+  const pts = [];
+  for (const w of [...db.workouts].sort((a, b) => a.date.localeCompare(b.date))) {
+    let top = 0;
+    for (const e of w.exercises)
+      if (exKey(e.name, e.equip, e.wedge) === key)
+        for (const s of e.sets)
+          if (!s.wu) { const eff = (s.w || 0) * (s.dual ? 2 : 1); if (eff > top) top = eff; }
+    if (top > 0) pts.push({ d: w.date, y: top });
+  }
+  return pts;
+}
+function lineChartSVG(pts, color) {
+  const W = 340, H = 130, L = 38, R = 14, T = 14, B = 24;
+  const ys = pts.map(p => p.y), mn = Math.min(...ys), mx = Math.max(...ys), span = (mx - mn) || 1;
+  const X = i => L + i * (W - L - R) / (pts.length - 1);
+  const Y = v => T + (H - T - B) * (1 - (v - mn) / span);
+  let d = '';
+  pts.forEach((p, i) => { d += (i ? 'L' : 'M') + X(i).toFixed(1) + ',' + Y(p.y).toFixed(1); });
+  const lx = X(pts.length - 1), ly = Y(pts[pts.length - 1].y);
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto" role="img">'
+    + '<path d="' + d + ' L' + lx.toFixed(1) + ',' + (H - B) + ' L' + L + ',' + (H - B) + ' Z" fill="' + color + '" opacity=".08"/>'
+    + '<path d="' + d + '" fill="none" stroke="' + color + '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>'
+    + '<circle cx="' + lx.toFixed(1) + '" cy="' + ly.toFixed(1) + '" r="3.5" fill="' + color + '"/>'
+    + '<text x="' + (L - 7) + '" y="' + (T + 4) + '" text-anchor="end" font-size="10" fill="#A19D95">' + fmtW(mx) + '</text>'
+    + '<text x="' + (L - 7) + '" y="' + (H - B + 4) + '" text-anchor="end" font-size="10" fill="#A19D95">' + fmtW(mn) + '</text>'
+    + '<text x="' + L + '" y="' + (H - 7) + '" font-size="10" fill="#6E6B64">' + fmtShort(pts[0].d) + '</text>'
+    + '<text x="' + (W - R) + '" y="' + (H - 7) + '" text-anchor="end" font-size="10" fill="#6E6B64">' + fmtShort(pts[pts.length - 1].d) + '</text>'
+    + '</svg>';
+}
+function barChartSVG(bars, color) {
+  const W = 340, H = 130, L = 38, R = 8, T = 14, B = 24;
+  const mx = Math.max(1, ...bars.map(b => b.v));
+  const bw = (W - L - R) / bars.length;
+  let el = '';
+  bars.forEach((b, i) => {
+    const bh = (H - T - B) * b.v / mx;
+    const x = L + i * bw + 2, y = H - B - bh;
+    el += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + Math.max(bw - 4, 2).toFixed(1) + '" height="' + Math.max(bh, 1.5).toFixed(1) + '" rx="2" fill="' + color + '" opacity="' + (b.v ? '.9' : '.15') + '"/>';
+    if (i % 4 === 0) el += '<text x="' + (x + (bw - 4) / 2).toFixed(1) + '" y="' + (H - 7) + '" text-anchor="middle" font-size="9" fill="#6E6B64">' + b.label + '</text>';
+  });
+  el += '<text x="' + (L - 7) + '" y="' + (T + 4) + '" text-anchor="end" font-size="10" fill="#A19D95">' + (mx >= 2000 ? Math.round(mx / 1000) + 'k' : Math.round(mx)) + '</text>';
+  return '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto" role="img">' + el + '</svg>';
+}
+function trendChartInner() {
+  const pts = progressionPoints(ui.trendEx);
+  if (pts.length < 2) return '<div class="dhint">Log this exercise in two or more sessions to see its trend.</div>';
+  const first = pts[0].y, latest = pts[pts.length - 1].y;
+  return lineChartSVG(pts, '#5B8FD4')
+    + '<div class="tdelta">First <b>' + fmtW(first) + '</b> → latest <b>' + fmtW(latest) + ' ' + unit() + '</b>'
+    + (latest !== first ? ' (' + (latest > first ? '+' : '−') + fmtW(Math.abs(latest - first)) + ')' : '')
+    + ' · ' + pts.length + ' sessions</div>';
+}
+function renderTrends() {
+  let h = '<div class="viewdate">Trends</div>';
+  const hasData = db.workouts.some(w => w.exercises.length);
+  if (!hasData && !Object.keys(db.bodyweight).length) {
+    return h + '<div class="empty"><span class="big">No trends yet</span>Charts appear once you log a few workouts.</div>';
+  }
+
+  /* exercise progression */
+  const known = weightExercises();
+  if (known.length) {
+    if (!ui.trendEx || !known.find(k => k.key === ui.trendEx)) ui.trendEx = known[0].key;
+    const pts = progressionPoints(ui.trendEx);
+    h += '<div class="dsec"><h2>Exercise · top set</h2>'
+      + '<select class="exsel trendsel" id="trendSelect">'
+      + known.map(k => '<option value="' + esc(k.key) + '"' + (k.key === ui.trendEx ? ' selected' : '') + '>'
+          + esc(k.name) + (k.equip ? ' · ' + esc(EQ_SHORT[k.equip] || k.equip) : '') + (k.wedge ? ' · Wedge' : '') + '</option>').join('')
+      + '</select>'
+      + '<div id="trendChart">' + trendChartInner() + '</div>'
+      + '</div>';
+  }
+
+  /* weekly volume, last 12 weeks */
+  const now = new Date();
+  const mon = new Date(now.getFullYear(), now.getMonth(), now.getDate() - ((now.getDay() + 6) % 7));
+  const weeks = [];
+  for (let k = 11; k >= 0; k--) {
+    const st = new Date(mon); st.setDate(mon.getDate() - 7 * k);
+    const en = new Date(st); en.setDate(st.getDate() + 7);
+    weeks.push({ st, en, label: (st.getMonth() + 1) + '/' + st.getDate(), v: 0 });
+  }
+  for (const w of db.workouts) {
+    const t = dateObj(w.date);
+    for (const wk of weeks)
+      if (t >= wk.st && t < wk.en) { wk.v += w.exercises.reduce((a, e) => a + e.sets.reduce((b, s) => b + setVol(s), 0), 0); break; }
+  }
+  if (weeks.some(w => w.v > 0)) {
+    h += '<div class="dsec"><h2>Weekly volume · ' + unit() + '</h2>' + barChartSVG(weeks, '#7BAE7F') + '</div>';
+  }
+
+  /* body weight, last 90 days */
+  const cutoff = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 90);
+  const bwPts = Object.keys(db.bodyweight).sort()
+    .filter(d => dateObj(d) >= cutoff)
+    .map(d => ({ d, y: db.bodyweight[d] }));
+  if (bwPts.length >= 2) {
+    h += '<div class="dsec"><h2>Body weight · 90 days</h2>' + lineChartSVG(bwPts, '#D9A44A')
+      + '<div class="tdelta">' + fmtW(bwPts[0].y) + ' → <b>' + fmtW(bwPts[bwPts.length - 1].y) + ' ' + unit() + '</b> ('
+      + (bwPts[bwPts.length - 1].y >= bwPts[0].y ? '+' : '−') + fmtW(Math.abs(bwPts[bwPts.length - 1].y - bwPts[0].y)) + ')</div></div>';
+  } else if (Object.keys(db.bodyweight).length < 2) {
+    h += '<div class="dsec"><h2>Body weight</h2><div class="dhint">Weigh in on a few different days to see your trend here.</div></div>';
+  }
   return h;
 }
 
@@ -1158,7 +1434,14 @@ function addExercise(def) {
   const name = (def.name || '').trim();
   if (!name) return;
   const s = ensureSession();
-  s.exercises.push({ id: uid(), name, group: def.group || null, equip: def.equip || null, notes: '', sets: [] });
+  /* superset: adding while the previous exercise is still open (has sets, not done) links them */
+  const prev = s.exercises[s.exercises.length - 1];
+  let ss = null;
+  if (prev && !prev.done && prev.sets.length) {
+    if (!prev.ss) prev.ss = uid();
+    ss = prev.ss;
+  }
+  s.exercises.push({ id: uid(), name, group: def.group || null, equip: def.equip || null, wedge: !!def.wedge, ss, notes: '', sets: [] });
   resetAddForm(false);
   save(); render();
 }
@@ -1178,7 +1461,7 @@ const actions = {
       addExercise({ name: ui.addExName, group: ui.addGroup, equip: ui.addEquip });
     }
   },
-  'pick-ex': (el) => addExercise({ name: el.dataset.name, equip: el.dataset.equip || null, group: el.dataset.group || null }),
+  'pick-ex': (el) => addExercise({ name: el.dataset.name, equip: el.dataset.equip || null, group: el.dataset.group || null, wedge: el.dataset.wedge === '1' }),
   'grp': (el) => {
     ui.addGroup = el.dataset.g;
     if (ui.addMode !== 'custom') { ui.addExName = null; ui.addEquip = null; }
@@ -1202,7 +1485,12 @@ const actions = {
   'back-today': () => { ui.logDate = null; resetAddForm(false); render(); },
   'finish': () => {
     const s = getSession();
-    if (s && s.exercises.some(e => e.sets.length)) { s.done = Date.now(); save(); render(); }
+    if (s && s.exercises.some(e => e.sets.length)) {
+      s.done = Date.now();
+      save(); render();
+      confetti();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   },
   'reopen': () => {
     const s = getSession();
@@ -1219,6 +1507,23 @@ const actions = {
   'b+': (el) => { const p = ui.pending[el.dataset.id]; const i = BANDS.findIndex(b => b[0] === p.band); p.band = BANDS[Math.min(BANDS.length - 1, i + 1)][0]; render(); },
   'b-': (el) => { const p = ui.pending[el.dataset.id]; const i = BANDS.findIndex(b => b[0] === p.band); p.band = BANDS[Math.max(0, i - 1)][0]; render(); },
   'dual': (el) => { const p = ui.pending[el.dataset.id]; p.dual = el.dataset.v === '1'; render(); },
+  'wu': (el) => { const p = ui.pending[el.dataset.id]; p.wu = !p.wu; render(); },
+  'wedge': (el) => {
+    const s = getSession(); if (!s) return;
+    const ex = s.exercises.find(e => e.id === el.dataset.id); if (!ex) return;
+    ex.wedge = !ex.wedge;
+    delete ui.pending[ex.id]; /* re-prefill from the right variant's history */
+    save(); render();
+  },
+  'unlink-ss': (el) => {
+    const s = getSession(); if (!s) return;
+    const ex = s.exercises.find(e => e.id === el.dataset.id); if (!ex) return;
+    const g = ex.ss;
+    ex.ss = null;
+    const rest = s.exercises.filter(e => e.ss === g);
+    if (rest.length === 1) rest[0].ss = null; /* a superset of one is not a superset */
+    save(); render();
+  },
   'log-set': (el) => {
     const s = getSession(); if (!s) return;
     const ex = s.exercises.find(e => e.id === el.dataset.id); if (!ex) return;
@@ -1226,13 +1531,19 @@ const actions = {
     if (isCardio(ex)) {
       ex.sets.push({ min: p.min, dist: p.dist || 0 });
     } else if (isBand(ex)) {
-      ex.sets.push({ band: p.band, r: p.r });
+      const set = { band: p.band, r: p.r };
+      if (p.wu) set.wu = true;
+      ex.sets.push(set);
     } else {
-      const prev = maxWeight(ex.name, ex.equip);
       const set = { w: p.w, r: p.r };
       if (p.dual) set.dual = true;
-      const eff = p.w * (p.dual ? 2 : 1);
-      if (prev > 0 && eff > prev) set.pr = true;
+      if (p.wu) {
+        set.wu = true; /* warm-ups never PR */
+      } else {
+        const prev = maxWeight(ex.name, ex.equip, ex.wedge);
+        const eff = p.w * (p.dual ? 2 : 1);
+        if (prev > 0 && eff > prev) set.pr = true;
+      }
       ex.sets.push(set);
     }
     save(); render();
@@ -1329,6 +1640,11 @@ document.addEventListener('change', (e) => {
     const v = parseFloat(String(t.value).replace(',', '.'));
     p.dist = isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : p.dist;
     t.value = fmtW(p.dist);
+  } else if (t.id === 'trendSelect') {
+    /* update the chart in place — re-rendering would dismiss the iOS picker wheel */
+    ui.trendEx = t.value;
+    const tc = document.getElementById('trendChart');
+    if (tc) tc.innerHTML = trendChartInner();
   } else if (t.id === 'exSelect') {
     ui.addExName = t.value || null;
     ui.addEquip = ui.addExName ? allowedEquip(ui.addExName)[0] : null;
