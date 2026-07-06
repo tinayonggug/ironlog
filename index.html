@@ -65,7 +65,7 @@
   /* ---------- header ---------- */
   header.top {
     display: flex; align-items: baseline; justify-content: space-between;
-    padding: 18px 20px 0;
+    padding: calc(18px + env(safe-area-inset-top, 0px)) 20px 0;
   }
   .brand { font-family: var(--disp); font-weight: 700; font-size: 19px; letter-spacing: .14em; text-transform: uppercase; }
   .brand .bar { color: var(--red); }
